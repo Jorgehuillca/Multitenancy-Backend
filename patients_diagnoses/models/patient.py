@@ -1,6 +1,11 @@
 from django.db import models
 from django.utils import timezone
 
+class ActivePatientManager(models.Manager):
+    """Manager por defecto que excluye registros soft-deleted."""
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
 class Patient(models.Model):
     """
     Modelo para gestionar los pacientes.
@@ -57,6 +62,10 @@ class Patient(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de actualización")
     deleted_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de eliminación")
+
+    # Managers
+    objects = ActivePatientManager()     # por defecto oculta eliminados
+    all_objects = models.Manager()       # acceso a todos (incluidos eliminados)
 
     class Meta:
         db_table = 'patients'

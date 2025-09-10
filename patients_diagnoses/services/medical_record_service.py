@@ -89,18 +89,38 @@ class MedicalRecordService:
         patient_id = data.get('patient') or data.get('patient_id')
         diagnose_id = data.get('diagnose') or data.get('diagnose_id')
 
-        # Manejo multitenant
+        # Validaciones iniciales: existencia de patient y diagnose activos (no borrados)
+        if not patient_id:
+            return None, {'patient_id': 'Es obligatorio'}
+        if not diagnose_id:
+            return None, {'diagnose_id': 'Es obligatorio'}
+
+        patient_qs = Patient.objects.filter(id=patient_id, deleted_at__isnull=True)
+        diagnose_qs = Diagnosis.objects.filter(id=diagnose_id, deleted_at__isnull=True)
+        patient_obj = patient_qs.first()
+        diagnose_obj = diagnose_qs.first()
+        if not patient_obj:
+            return None, {'patient_id': 'Paciente no existe o está eliminado'}
+        if not diagnose_obj:
+            return None, {'diagnose_id': 'Diagnóstico no existe o está eliminado'}
+
+        # Manejo multitenant y determinación de reflexo_id
         if user is not None:
             if is_global_admin(user):
-                # Para administradores globales, no filtrar por tenant
-                # Si no se envía reflexo_id, intentar inferirlo del paciente
-                if not data.get('reflexo_id') and patient_id:
+                # Administrador global: puede enviar reflexo_id explícito.
+                # Si viene, debe coincidir con patient y diagnose; si no viene, inferir del patient.
+                explicit_tid = data.get('reflexo_id')
+                if explicit_tid is not None:
                     try:
-                        p = Patient.objects.only('reflexo_id').get(pk=patient_id)
-                        if p.reflexo_id:
-                            data['reflexo_id'] = p.reflexo_id
-                    except Patient.DoesNotExist:
-                        pass
+                        explicit_tid = int(explicit_tid)
+                    except (TypeError, ValueError):
+                        return None, {'reflexo_id': 'Debe ser un entero válido'}
+                    if patient_obj.reflexo_id != explicit_tid or diagnose_obj.reflexo_id != explicit_tid:
+                        return None, {'reflexo_id': 'Debe coincidir con el tenant del paciente y del diagnóstico'}
+                    data['reflexo_id'] = explicit_tid
+                else:
+                    if patient_obj.reflexo_id:
+                        data['reflexo_id'] = patient_obj.reflexo_id
             else:
                 # Usuario de empresa: asignar/validar tenant
                 tenant_id = get_tenant(user)
@@ -126,6 +146,18 @@ class MedicalRecordService:
                     ).get(pk=diagnose_id)
                 except Diagnosis.DoesNotExist:
                     return None, {'diagnose_id': 'Diagnóstico no pertenece a tu empresa'}
+
+        # Validación de coherencia y presencia de tenant:
+        p_tid = patient_obj.reflexo_id
+        d_tid = diagnose_obj.reflexo_id
+        if p_tid is None or d_tid is None:
+            return None, {'non_field_errors': 'Paciente y diagnóstico deben pertenecer a una empresa (tenant) válida.'}
+        if p_tid != d_tid:
+            return None, {'non_field_errors': 'Paciente y diagnóstico pertenecen a diferentes empresas (tenant).'}
+
+        # Asegurar que el registro quede asociado al tenant del paciente (o al explícito ya validado)
+        if not data.get('reflexo_id'):
+            data['reflexo_id'] = p_tid
         serializer = MedicalRecordSerializer(data=data)
         if serializer.is_valid():
             record = serializer.save()
@@ -154,14 +186,23 @@ class MedicalRecordService:
             return None, {'error': 'Historial médico no encontrado'}
     
     @staticmethod
-    def delete_medical_record(record_id, user=None):
-        """Elimina un historial médico (soft delete)."""
+    def delete_medical_record(record_id, user=None, hard: bool = False):
+        """Elimina un historial médico.
+        - hard=False: soft delete (marca deleted_at)
+        - hard=True: eliminación permanente (DELETE)
+        """
         try:
-            base = MedicalRecord.objects.filter(id=record_id, deleted_at__isnull=True)
+            if hard:
+                base = MedicalRecord.all_objects.filter(id=record_id)
+            else:
+                base = MedicalRecord.objects.filter(id=record_id, deleted_at__isnull=True)
             if user is not None:
                 base = filter_by_tenant(base, user, field='reflexo')
             record = base.get()
-            record.soft_delete()
+            if hard:
+                record.delete()
+            else:
+                record.soft_delete()
             return True
         except MedicalRecord.DoesNotExist:
             return False

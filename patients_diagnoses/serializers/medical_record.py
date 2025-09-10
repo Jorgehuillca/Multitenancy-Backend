@@ -2,6 +2,7 @@ from rest_framework import serializers
 from ..models.medical_record import MedicalRecord
 from .patient import PatientSerializer
 from .diagnosis import DiagnosisSerializer
+from reflexo.models import Reflexo
 
 class MedicalRecordSerializer(serializers.ModelSerializer):
     """Serializer para el modelo MedicalRecord."""
@@ -22,12 +23,18 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
         write_only=True
     )
     
+    # Tenant (reflexo)
+    reflexo_id = serializers.PrimaryKeyRelatedField(
+        queryset=Reflexo.objects.all(), source='reflexo', required=False
+    )
+    reflexo_name = serializers.CharField(source='reflexo.name', read_only=True)
+    
     class Meta:
         model = MedicalRecord
         fields = [
             'id', 'patient', 'diagnose', 'diagnosis_date',
             'symptoms', 'treatment', 'notes', 'status',
-            'patient_id', 'diagnose_id', 'created_at', 'updated_at', 'deleted_at'
+            'patient_id', 'diagnose_id', 'reflexo_id', 'reflexo_name', 'created_at', 'updated_at', 'deleted_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'deleted_at']
     
@@ -57,6 +64,18 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
                     "Ya existe un registro médico para este paciente con este diagnóstico en la misma fecha."
                 )
         return data
+
+    def create(self, validated_data):
+        # Asegurar que siempre se guarde el tenant (reflexo)
+        reflexo = validated_data.get('reflexo')
+        patient = validated_data.get('patient')
+        if reflexo is None and patient is not None:
+            reflexo = getattr(patient, 'reflexo', None)
+            if reflexo is not None:
+                validated_data['reflexo'] = reflexo
+        if validated_data.get('reflexo') is None:
+            raise serializers.ValidationError({'reflexo_id': 'No se pudo determinar la empresa (tenant) para el historial médico.'})
+        return super().create(validated_data)
 
 class MedicalRecordListSerializer(serializers.ModelSerializer):
     """Serializer simplificado para listar historiales médicos."""

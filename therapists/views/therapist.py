@@ -96,10 +96,17 @@ class TherapistViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        Hard delete (global): elimina definitivamente el terapeuta.
+        DELETE detail:
+        - Por defecto: soft delete (marca deleted_at).
+        - ?hard=true: hard delete (elimina definitivamente, global: no queda en DB ni Admin).
         """
         instance = self.get_object()
-        instance.delete()
+        hard_param = str(request.query_params.get('hard', '')).lower()
+        hard = hard_param in ('1', 'true', 'yes')
+        if hard:
+            instance.delete()
+        else:
+            instance.soft_delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"])

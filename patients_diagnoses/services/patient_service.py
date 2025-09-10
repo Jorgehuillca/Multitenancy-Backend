@@ -178,8 +178,15 @@ class PatientService:
         return patient
 
     @transaction.atomic
-    def destroy(self, patient: Patient) -> None:
-        patient.soft_delete()
+    def destroy(self, patient: Patient, hard: bool = False) -> None:
+        """Elimina un paciente.
+        - hard=False: soft delete (marca deleted_at)
+        - hard=True: eliminación permanente (DELETE)
+        """
+        if hard:
+            patient.delete()
+        else:
+            patient.soft_delete()
 
     def restore(self, patient_id: int) -> bool:
         try:

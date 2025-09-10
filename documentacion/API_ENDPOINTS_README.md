@@ -257,9 +257,31 @@ Base: http://localhost:8000/api/patients/
       "code": "DX001"
     }
     ```
+    Notas (multitenant):
+    - Los diagnósticos pertenecen a una empresa (tenant) mediante `reflexo_id`.
+    - Usuarios de empresa (no admin):
+      - No necesitan enviar `reflexo_id`; se asigna automáticamente desde el token y solo pueden crear/visualizar diagnósticos de su empresa.
+    - Administrador global:
+      - Puede enviar `reflexo_id` explícito para crear el diagnóstico en un tenant específico (A o B) y puede ver TODOS los diagnósticos.
+      - Si no envía `reflexo_id`, se puede inferir desde el contexto según configuración, pero se recomienda enviarlo para evitar ambigüedad.
+    - Unicidad por empresa: la combinación `(reflexo_id, code)` debe ser única. Puedes repetir un `code` en distintas empresas, pero no dentro de la misma.
+    - Ejemplo (admin creando en Reflexo B id=2):
+      ```json
+      {
+        "name": "Lumbalgia",
+        "code": "DX001",
+        "reflexo_id": 2
+      }
+      ```
   - GET http://localhost:8000/api/patients/diagnoses/{id}/
   - PUT http://localhost:8000/api/patients/diagnoses/{id}/
   - DELETE http://localhost:8000/api/patients/diagnoses/{id}/
+    
+    Notas sobre eliminación (global por código):
+    - Por defecto este DELETE realiza un soft delete GLOBAL por `code` (marca `deleted_at` en TODOS los diagnósticos que comparten ese `code`, sin importar el tenant). Dejarán de verse en la API y en el Admin.
+    - Para eliminar definitivamente (hard delete) y que no quede registro en la base de datos, agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/patients/diagnoses/{id}/?hard=true`
+    - Razón: el catálogo de diagnósticos puede existir replicado por tenant con el mismo `code`; la eliminación es global por `code`.
   - GET http://localhost:8000/api/patients/diagnoses/search/?q={text}
     
     Nota:
@@ -348,6 +370,14 @@ Base: http://localhost:8000/api/patients/
     }
     ```
   - DELETE http://localhost:8000/api/patients/patients/{id}/
+    
+    Notas sobre eliminación:
+    - Por defecto realiza soft delete (marca `deleted_at`). El paciente deja de aparecer en la API y en el Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente, agrega el parámetro de query `?hard=true`:
+      - DELETE `http://localhost:8000/api/patients/patients/{id}/?hard=true` (hard delete, elimina de la DB)
+    - Endpoint dedicado a eliminación definitiva (equivalente a `?hard=true`):
+      - DELETE `http://localhost:8000/api/patients/patients/{id}/hard-delete/`
+    - Multitenant: se respeta el aislamiento por empresa (tenant). Solo el admin global puede borrar fuera de su tenant.
   - GET http://localhost:8000/api/patients/patients/search/?q={text}&page={n}
 
 - medical records
@@ -363,6 +393,44 @@ Base: http://localhost:8000/api/patients/
       "notes": "Notas"
     }
     ```
+    Notas (multitenant):
+    - Los historiales médicos se guardan asociados a una empresa (tenant) en el campo `reflexo_id`.
+    - Reglas de visibilidad:
+      - Usuarios de empresa (no admin) ven SOLO historiales de su empresa.
+      - El administrador global ve TODOS los historiales.
+    - Reglas al crear:
+      - Ambos IDs deben pertenecer al MISMO tenant: el paciente (`patient_id`) y el diagnóstico (`diagnose_id`). Si no, responde 400 con
+        `{"non_field_errors": "Paciente y diagnóstico pertenecen a diferentes empresas (tenant)."}`
+      - Usuario de empresa (no admin):
+        - No necesitas enviar `reflexo_id`; se asigna automáticamente desde tu token.
+        - Se valida que `patient_id` y `diagnose_id` pertenecen a tu empresa; si no, responde 400.
+      - Administrador global:
+        - Puede enviar `reflexo_id` explícito en el body, pero DEBE coincidir con el tenant del paciente y del diagnóstico; si no, responde 400.
+        - Si no envía `reflexo_id`, el backend lo infiere desde el paciente.
+
+    Ejemplos:
+    - Usuario de empresa (A):
+      ```json
+      {
+        "patient_id": 4,
+        "diagnose_id": 5,
+        "diagnosis_date": "2025-09-04",
+        "notes": "Notas"
+      }
+      ```
+      (Se asigna `reflexo_id` automáticamente a la empresa A si ambos IDs son de A.)
+
+    - Admin global indicando explícitamente empresa B (`reflexo_id = 2`):
+      ```json
+      {
+        "patient_id": 10,
+        "diagnose_id": 7,
+        "diagnosis_date": "2025-09-04",
+        "notes": "Notas",
+        "reflexo_id": 2
+      }
+      ```
+      (El `patient_id` y el `diagnose_id` deben pertenecer a la empresa B; si no, 400.)
     Notas:
     - Usa IDs reales:
       - `patient_id`: ID del paciente (creado previamente en `/api/patients/patients/`).
@@ -378,11 +446,15 @@ Base: http://localhost:8000/api/patients/
   - GET http://localhost:8000/api/patients/medical-records/{id}/
   - PUT http://localhost:8000/api/patients/medical-records/{id}/
   - DELETE http://localhost:8000/api/patients/medical-records/{id}/
+    Notas sobre eliminación (global):
+    - Por defecto realiza soft delete (marca `deleted_at`). El historial deja de aparecer GLOBALMENTE en la API y en el panel de Django Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente (hard delete) de forma GLOBAL, agrega el parámetro de query `?hard=true`:
+      - DELETE `http://localhost:8000/api/patients/medical-records/{id}/?hard=true` (elimina de la base de datos; no aparecerá en ningún lado)
+    - Endpoint dedicado a eliminación definitiva (equivalente a `?hard=true`):
+      - DELETE `http://localhost:8000/api/patients/medical-records/{id}/hard-delete/`
+    - Multitenant: se respeta el aislamiento por empresa (tenant) al seleccionar qué registros puedes borrar. Solo el admin global puede borrar fuera de su tenant.
   - GET http://localhost:8000/api/patients/patients/{patient_id}/medical-history/
   - GET http://localhost:8000/api/patients/diagnosis-statistics/?from=YYYY-MM-DD&to=YYYY-MM-DD
-
-
----
 
 ## Architect Module
 Base: http://localhost:8000/api/architect/
@@ -441,18 +513,43 @@ Router resource: `therapists`
       "last_name_maternal": "García",
       "first_name": "Ana",
       "email": "ana.perez@gmail.com",
-      "region_id": 1,
-      "province_id": 10,
-      "district_id": 1001
+      "region_id": 30,
+      "province_id": 591,
+      "district_id": 5626
     }
     ```
-    Notas:
+    Notas (multitenant):
+    - Los terapeutas pertenecen a una empresa (tenant) mediante `reflexo_id`.
+    - Usuario de empresa (no admin):
+      - No necesita enviar `reflexo_id`; se asigna automáticamente desde su token y solo puede crear/listar terapeutas de su empresa.
+    - Administrador global:
+      - Puede enviar `reflexo_id` explícito para crear el terapeuta en una empresa específica (por ejemplo, Reflexo A o Reflexo B).
+      - El admin global puede ver TODOS los terapeutas; los usuarios de empresa ven solo los de su empresa.
+    - Ejemplo (admin creando en Reflexo B id=2):
+      ```json
+      {
+        "document_type_id": 1,
+        "document_number": "12345678",
+        "last_name_paternal": "Pérez",
+        "last_name_maternal": "García",
+        "first_name": "Ana",
+        "email": "ana.perez@gmail.com",
+        "region_id": 30,
+        "province_id": 591,
+        "district_id": 5626,
+        "reflexo_id": 2
+      }
+      ```
     - Campos requeridos: `document_type_id`, `document_number`, `last_name_paternal`, `last_name_maternal`, `first_name`, `email`, `region_id`, `province_id`, `district_id`.
     - Identificadores de ubicación:
       - Opción A (IDs): `region_id`, `province_id`, `district_id` son los IDs reales (PK) de cada tabla. Obténlos así:
         - Regiones: `GET /api/locations/regions/` → usa el campo `id`.
         - Provincias por región: `GET /api/locations/provinces/?region={region_id}` → usa el campo `id`.
         - Distritos por provincia: `GET /api/locations/districts/?province={province_id}` → usa el campo `id`.
+        - Nota de rangos (semilla actual):
+          - `region_id` válidos empiezan aproximadamente desde 30 en adelante.
+          - `province_id` válidos empiezan aproximadamente desde 591 en adelante.
+          - `district_id` válidos empiezan aproximadamente desde 5626 en adelante.
       - Opción B (Códigos ubigeo): puedes enviar `region_code`, `province_code`, `district_code` (códigos ubigeo) y la API los resolverá automáticamente a los IDs correctos. Si usas `*_code`, no es necesario enviar los `*_id`.
       - Regla de coherencia: la `province` debe pertenecer a la `region`; el `district` debe pertenecer a la `province`.
     - Ejemplo usando códigos ubigeo:
@@ -464,9 +561,9 @@ Router resource: `therapists`
         "last_name_maternal": "García",
         "first_name": "Ana",
         "email": "ana.perez@gmail.com",
-        "region_code": 1,
-        "province_code": 101,
-        "district_code": 10101
+        "region_code": 30,
+        "province_code": 591,
+        "district_code": 5626
       }
       ```
     - `email` debe ser válido y terminar en `@gmail.com`.
@@ -494,7 +591,12 @@ Router resource: `therapists`
       "district_code": 10101
     }
     ```
-  - DELETE http://localhost:8000/api/therapists/therapists/{id}/ (soft delete)
+  - DELETE http://localhost:8000/api/therapists/therapists/{id}/
+    
+    Notas sobre eliminación (global):
+    - Por defecto realiza soft delete (marca `deleted_at`). El terapeuta deja de aparecer en la API y en el Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente (hard delete) de forma GLOBAL y que no quede registro en la base de datos ni en el Admin, agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/therapists/therapists/{id}/?hard=true`
 
 - custom actions
   - GET http://localhost:8000/api/therapists/therapists/inactive/

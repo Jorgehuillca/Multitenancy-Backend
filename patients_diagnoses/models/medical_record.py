@@ -1,6 +1,11 @@
 from django.db import models
 from django.utils import timezone
 
+class ActiveMedicalRecordManager(models.Manager):
+    """Manager por defecto que excluye registros soft-deleted."""
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
 class MedicalRecord(models.Model):
     """
     Historial médico que relaciona pacientes con diagnósticos.
@@ -32,6 +37,10 @@ class MedicalRecord(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de actualización")
     deleted_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de eliminación")
+    
+    # Managers
+    objects = ActiveMedicalRecordManager()
+    all_objects = models.Manager()
     
     class Meta:
         db_table = 'medical_records'

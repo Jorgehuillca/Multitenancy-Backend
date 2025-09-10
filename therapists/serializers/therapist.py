@@ -6,6 +6,7 @@ from ubi_geo.models import Region, Province, District
 from ubi_geo.serializers import RegionSerializer, ProvinceSerializer, DistrictSerializer
 from histories_configurations.models import DocumentType
 from histories_configurations.serializers import DocumentTypeSerializer
+from reflexo.models import Reflexo
 
 class TherapistSerializer(serializers.ModelSerializer):
     # Serializadores anidados para mostrar datos completos
@@ -13,6 +14,9 @@ class TherapistSerializer(serializers.ModelSerializer):
     province = ProvinceSerializer(read_only=True)
     district = DistrictSerializer(read_only=True)
     document_type = DocumentTypeSerializer(read_only=True)  # Para lectura
+    # Tenant (empresa)
+    reflexo_id = serializers.PrimaryKeyRelatedField(queryset=Reflexo.objects.all(), source='reflexo', required=False)
+    reflexo_name = serializers.CharField(source='reflexo.name', read_only=True)
     
     # Campos para escritura (crear/actualizar)
     region_id = serializers.PrimaryKeyRelatedField(
@@ -51,6 +55,7 @@ class TherapistSerializer(serializers.ModelSerializer):
         model = Therapist
         fields = [
             'id',
+            'reflexo_id', 'reflexo_name',
             'document_type',
             'document_number',
             'last_name_paternal',

@@ -104,15 +104,30 @@ class PatientRetrieveUpdateDeleteView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
+        # Permitir eliminación dura (hard delete) mediante query param ?hard=true
+        hard_param = str(request.query_params.get('hard', '')).lower()
+        hard = hard_param in ('1', 'true', 'yes')
+
         try:
-            patient = filter_by_tenant(
-                Patient.objects.filter(deleted_at__isnull=True),
-                request.user,
-                field='reflexo'
-            ).get(pk=pk)
+            if hard:
+                # Para hard delete, permitir eliminar incluso si ya está soft-deleted
+                base_qs = Patient.all_objects.all()
+                patient = filter_by_tenant(
+                    base_qs,
+                    request.user,
+                    field='reflexo'
+                ).get(pk=pk)
+            else:
+                # Soft delete solo sobre registros activos
+                patient = filter_by_tenant(
+                    Patient.objects.filter(deleted_at__isnull=True),
+                    request.user,
+                    field='reflexo'
+                ).get(pk=pk)
         except Patient.DoesNotExist:
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
-        patient_service.destroy(patient)
+
+        patient_service.destroy(patient, hard=hard)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class PatientSearchView(APIView):
@@ -125,5 +140,24 @@ class PatientSearchView(APIView):
             "current_page": page_obj.number,
             "results": serializer.data,
         })
+
+class HardDeletePatientView(APIView):
+    """Endpoint dedicado para eliminación permanente de un paciente.
+    URL: /api/patients/patients/<id>/hard-delete/
+    """
+    def delete(self, request, pk):
+        try:
+            # Usar all_objects para permitir borrar aunque esté soft-deleted
+            base_qs = Patient.all_objects.all()
+            patient = filter_by_tenant(
+                base_qs,
+                request.user,
+                field='reflexo'
+            ).get(pk=pk)
+        except Patient.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        patient_service.destroy(patient, hard=True)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 # Create your views here.

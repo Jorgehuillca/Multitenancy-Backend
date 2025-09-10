@@ -1,8 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views.diagnosis import ( DiagnosisListCreateAPIView, DiagnosisRetrieveUpdateDestroyAPIView, DiagnosisSearchAPIView )
-from .views.patient import ( PatientListCreateView, PatientRetrieveUpdateDeleteView, PatientSearchView )
-from .views.medical_record import ( MedicalRecordListCreateAPIView, MedicalRecordRetrieveUpdateDestroyAPIView, PatientMedicalHistoryAPIView, DiagnosisStatisticsAPIView )
+from .views.patient import ( PatientListCreateView, PatientRetrieveUpdateDeleteView, PatientSearchView, HardDeletePatientView )
+from .views.medical_record import ( MedicalRecordListCreateAPIView, MedicalRecordRetrieveUpdateDestroyAPIView, PatientMedicalHistoryAPIView, DiagnosisStatisticsAPIView, HardDeleteMedicalRecordView )
 
 # Eliminamos el router ya que usamos vistas basadas en clases
 # router = DefaultRouter()
@@ -18,10 +18,12 @@ urlpatterns = [
      path('patients/', PatientListCreateView.as_view(), name='patient-list'),
      path('patients/search/', PatientSearchView.as_view(), name='patient-search'),
      path('patients/<int:pk>/', PatientRetrieveUpdateDeleteView.as_view(), name='patient-detail'),
+     path('patients/<int:pk>/hard-delete/', HardDeletePatientView.as_view(), name='patient-hard-delete'),
      
      # URLs de historiales médicos
      path('medical-records/', MedicalRecordListCreateAPIView.as_view(), name='medical-record-list-create'),
      path('medical-records/<int:pk>/', MedicalRecordRetrieveUpdateDestroyAPIView.as_view(), name='medical-record-detail'),
+     path('medical-records/<int:pk>/hard-delete/', HardDeleteMedicalRecordView.as_view(), name='medical-record-hard-delete'),
      path('patients/<int:patient_id>/medical-history/', PatientMedicalHistoryAPIView.as_view(), name='patient-medical-history'),
      path('diagnosis-statistics/', DiagnosisStatisticsAPIView.as_view(), name='diagnosis-statistics'),
 ]

@@ -76,7 +76,9 @@ class MedicalRecordRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAP
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, *args, **kwargs):
-        success = medical_record_service.delete_medical_record(kwargs['pk'], user=request.user)
+        hard_param = str(request.query_params.get('hard', '')).lower()
+        hard = hard_param in ('1', 'true', 'yes')
+        success = medical_record_service.delete_medical_record(kwargs['pk'], user=request.user, hard=hard)
         
         if success:
             return Response({'detail': 'Historial médico eliminado correctamente.'}, status=status.HTTP_204_NO_CONTENT)
@@ -105,3 +107,17 @@ class DiagnosisStatisticsAPIView(generics.ListAPIView):
     def get(self, request):
         stats = medical_record_service.get_diagnosis_statistics(user=request.user)
         return Response(stats)
+
+class HardDeleteMedicalRecordView(generics.DestroyAPIView):
+    """Endpoint dedicado para eliminación permanente de un historial médico.
+    URL: /api/patients/medical-records/<id>/hard-delete/
+    """
+    serializer_class = MedicalRecordSerializer
+    queryset = MedicalRecord.all_objects.all()
+
+    def delete(self, request, *args, **kwargs):
+        success = medical_record_service.delete_medical_record(kwargs['pk'], user=request.user, hard=True)
+        if success:
+            return Response({'detail': 'Historial médico eliminado definitivamente.'}, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({'error': 'Historial médico no encontrado'}, status=status.HTTP_404_NOT_FOUND)

@@ -60,7 +60,9 @@ class DiagnosisRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIVie
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, *args, **kwargs):
-        success = diagnosis_service.delete_diagnosis(kwargs['pk'])
+        hard_param = str(request.query_params.get('hard', '')).lower()
+        hard = hard_param in ('1', 'true', 'yes')
+        success = diagnosis_service.delete_diagnosis(kwargs['pk'], hard=hard)
         
         if success:
             return Response({'detail': 'Diagnóstico eliminado correctamente.'}, status=status.HTTP_204_NO_CONTENT)

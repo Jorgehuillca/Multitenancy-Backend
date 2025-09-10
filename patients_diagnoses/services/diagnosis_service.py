@@ -70,18 +70,20 @@ class DiagnosisService:
             return None, {'error': 'Diagnóstico no encontrado'}
     
     @staticmethod
-    def delete_diagnosis(diagnosis_id):
-        """Elimina un diagnóstico de manera global (soft delete por código).
-        
-        A partir del ID recibido:
-        - Obtiene el diagnóstico (si no existe o ya está eliminado, retorna False)
-        - Toma su `code`
-        - Marca como eliminado (deleted_at) todos los diagnósticos con ese mismo `code`
-          sin importar el tenant (`reflexo`), es decir, eliminación global.
+    def delete_diagnosis(diagnosis_id, hard: bool = False):
+        """Elimina un diagnóstico de manera global por `code`.
+        - hard=False: soft delete (marca deleted_at para todos los con el mismo code)
+        - hard=True: eliminación permanente para todos los con el mismo code
         """
-        diagnosis = Diagnosis.objects.filter(id=diagnosis_id, deleted_at__isnull=True).first()
+        # Buscar incluso si ya está soft-deleted
+        diagnosis = Diagnosis.all_objects.filter(id=diagnosis_id).first()
         if not diagnosis:
             return False
+        if hard:
+            # Borrado definitivo global por código
+            Diagnosis.all_objects.filter(code=diagnosis.code).delete()
+            return True
+        # Soft delete global por código
         now = timezone.now()
         Diagnosis.objects.filter(code=diagnosis.code, deleted_at__isnull=True).update(deleted_at=now)
         return True
