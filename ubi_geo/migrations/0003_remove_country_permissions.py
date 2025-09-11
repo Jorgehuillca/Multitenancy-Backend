@@ -23,6 +23,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('ubi_geo', '0002_remove_region_country'),
+        ('auth', '0012_alter_user_first_name_max_length'),
     ]
 
     operations = [

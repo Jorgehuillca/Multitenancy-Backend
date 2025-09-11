@@ -10,17 +10,17 @@ class Migration(migrations.Migration):
         ("users_profiles", "0001_initial"),
     ]
 
-    operations = [
-        migrations.AddField(
-            model_name="user",
-            name="reflexo",
-            field=models.ForeignKey(
-                to="reflexo.reflexo",
-                on_delete=django.db.models.deletion.PROTECT,
-                null=True,
-                blank=True,
-                related_name="+",
-                verbose_name="Empresa/Tenant",
-            ),
-        ),
-    ]
+    #operations = [
+        #migrations.AddField(
+            #model_name="user",
+            #name="reflexo",
+            #field=models.ForeignKey(
+                #to="reflexo.reflexo",
+                #on_delete=django.db.models.deletion.PROTECT,
+                #null=True,
+                #blank=True,
+                #related_name="+",
+                #verbose_name="Empresa/Tenant",
+            #),
+        #),
+    #]
