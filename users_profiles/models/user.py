@@ -42,8 +42,8 @@ class User(AbstractUser):
     document_number = models.CharField(max_length=20, unique=True, verbose_name="Número de documento")
     user_name = models.CharField(max_length=50, unique=True, verbose_name="Nombre de usuario")
     photo_url = models.ImageField(upload_to="users/photos/", blank=True, null=True,
-                                  verbose_name="Foto de perfil",
-                                  validators=[FileExtensionValidator(allowed_extensions=["jpg","jpeg","png","gif"])])
+                                verbose_name="Foto de perfil",
+                                validators=[FileExtensionValidator(allowed_extensions=["jpg","jpeg","png","gif"])])
     name = models.CharField(max_length=100, verbose_name="Nombres")
     paternal_lastname = models.CharField(max_length=100, verbose_name="Apellido paterno")
     maternal_lastname = models.CharField(max_length=100, verbose_name="Apellido materno")
@@ -70,7 +70,7 @@ class User(AbstractUser):
     )
 
     document_type = models.ForeignKey('histories_configurations.DocumentType',
-                                      on_delete=models.CASCADE, null=True, blank=True, verbose_name="Tipo de documento")
+                                    on_delete=models.CASCADE, null=True, blank=True, verbose_name="Tipo de documento")
     country = models.ForeignKey('ubi_geo.Country',
                                 on_delete=models.SET_NULL, null=True, blank=True, verbose_name="País")
 
