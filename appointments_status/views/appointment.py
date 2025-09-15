@@ -24,6 +24,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     serializer_class = AppointmentSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = [
+        'reflexo',
         'appointment_date', 
         'appointment_status', 
         'appointment_type', 
@@ -32,12 +33,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         'therapist'
     ]
     search_fields = [
+        'reflexo',
         'ailments', 
         'diagnosis', 
         'observation', 
         'ticket_number'
     ]
     ordering_fields = [
+        'reflexo',
         'appointment_date', 
         'hour', 
         'created_at', 

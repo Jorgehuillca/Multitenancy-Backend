@@ -100,6 +100,24 @@ class CustomUserAdmin(BaseUserAdmin):
             # para capturarlo al crear el usuario.
             "fields": ("email", "user_name", "password1", "password2"),
         }),
+        ("Información personal", {
+            "classes": ("wide",),
+            "fields": (
+                "name",
+                "paternal_lastname", 
+                "maternal_lastname",
+                "sex",
+                "phone",
+                "document_type",
+                "document_number",
+                "country",
+            ),
+        }),
+        ("Multi-tenant", {
+            "classes": ("wide",),
+            "fields": ("reflexo",),
+            "description": "Empresa/Tenant al que pertenece el usuario"
+        }),
     )
 
     readonly_fields = ("last_login", "created_at", "updated_at", "email_verified_at")

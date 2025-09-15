@@ -69,7 +69,7 @@ class ReportAPIView:
             return JsonResponse(serializer.errors, status=400)
 
         # Obtener datos usando parámetros validados
-        data = report_service.get_appointments_count_by_therapist(serializer.validated_data)
+        data = report_service.get_appointments_count_by_therapist(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -96,7 +96,7 @@ class ReportAPIView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_patients_by_therapist(serializer.validated_data)
+        data = report_service.get_patients_by_therapist(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -111,7 +111,7 @@ class ReportAPIView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_daily_cash(serializer.validated_data)
+        data = report_service.get_daily_cash(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -126,7 +126,7 @@ class ReportAPIView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_improved_daily_cash(serializer.validated_data)
+        data = report_service.get_improved_daily_cash(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -141,7 +141,7 @@ class ReportAPIView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_daily_paid_tickets(serializer.validated_data)
+        data = report_service.get_daily_paid_tickets(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -156,7 +156,7 @@ class ReportAPIView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_appointments_between_dates(serializer.validated_data)
+        data = report_service.get_appointments_between_dates(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -178,7 +178,7 @@ class PDFExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_appointments_count_by_therapist(serializer.validated_data)
+        data = report_service.get_appointments_count_by_therapist(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -202,7 +202,7 @@ class PDFExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_patients_by_therapist(serializer.validated_data)
+        data = report_service.get_patients_by_therapist(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -226,7 +226,7 @@ class PDFExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_daily_cash(serializer.validated_data)
+        data = report_service.get_daily_cash(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -254,7 +254,7 @@ class PDFExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_improved_daily_cash(serializer.validated_data)
+        data = report_service.get_improved_daily_cash(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -278,7 +278,7 @@ class PDFExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_daily_paid_tickets(serializer.validated_data)
+        data = report_service.get_daily_paid_tickets(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -308,7 +308,7 @@ class ExcelExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_appointments_between_dates(serializer.validated_data)
+        data = report_service.get_appointments_between_dates(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -377,7 +377,7 @@ class ExcelExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_improved_daily_cash(serializer.validated_data)
+        data = report_service.get_improved_daily_cash(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 
@@ -453,7 +453,7 @@ class ExcelExportView:
         if not serializer.is_valid():
             return JsonResponse(serializer.errors, status=400)
 
-        data = report_service.get_daily_paid_tickets(serializer.validated_data)
+        data = report_service.get_daily_paid_tickets(serializer.validated_data, request.user)
         if isinstance(data, dict) and "error" in data:
             return JsonResponse(data, status=400)
 

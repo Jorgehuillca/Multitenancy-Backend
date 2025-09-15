@@ -25,11 +25,12 @@ class TherapistViewSet(viewsets.ModelViewSet):
     serializer_class = TherapistSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = [
-        "name",
+        "reflexo__name",  # búsqueda por nombre de tenant
+        "first_name",
         "last_name_paternal",
         "last_name_maternal",
         "document_number",
-        "document_type",
+        "document_type__name",
         "email",
         "phone",
         "address",
