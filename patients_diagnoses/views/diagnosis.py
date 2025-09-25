@@ -74,14 +74,18 @@ class DiagnosisSearchAPIView(APIView):
     def get(self, request):
         query = request.GET.get('q', '').strip()
         if not query:
-            return Response({"detail": "Se requiere un parámetro de búsqueda."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Se requiere un parámetro de búsqueda (q)."}, status=status.HTTP_400_BAD_REQUEST)
 
-        diagnoses = Diagnosis.objects.filter(
-            Q(name__icontains=query) | Q(code__icontains=query),
-            deleted_at__isnull=True
-        )
+        # Soporta paginación igual que el listado
+        page = int(request.GET.get('page', 1))
+        page_size = int(request.GET.get('page_size', 10))
 
-        serializer = DiagnosisSerializer(diagnoses, many=True)
-        return Response(serializer.data)
+        result = diagnosis_service.get_all_diagnoses(page=page, page_size=page_size, search=query)
+        return Response({
+            "count": result['total'],
+            "num_pages": result['total_pages'],
+            "current_page": result['current_page'],
+            "results": result['diagnoses'],
+        })
 
 

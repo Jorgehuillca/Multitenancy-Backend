@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from ..models import AppointmentStatus
 from architect.utils.tenant import get_tenant
+from architect.utils.tenant import is_global_admin
+from reflexo.models import Reflexo
 
 
 class AppointmentStatusSerializer(serializers.ModelSerializer):
@@ -9,6 +11,12 @@ class AppointmentStatusSerializer(serializers.ModelSerializer):
     Basado en la estructura actualizada del modelo.
     """
     
+    # Tenant (solo admins pueden enviarlo)
+    reflexo_id = serializers.PrimaryKeyRelatedField(
+        queryset=Reflexo.objects.all(), source='reflexo', required=False
+    )
+    reflexo_name = serializers.CharField(source='reflexo.name', read_only=True)
+
     # Campo calculado
     appointments_count = serializers.ReadOnlyField()
     
@@ -16,6 +24,7 @@ class AppointmentStatusSerializer(serializers.ModelSerializer):
         model = AppointmentStatus
         fields = [
             'id',
+            'reflexo_id', 'reflexo_name',
             'name',
             'description',
             'appointments_count',
@@ -35,8 +44,16 @@ class AppointmentStatusSerializer(serializers.ModelSerializer):
         
         # Verificar que no exista otro estado con el mismo nombre
         instance = self.instance
-        # Limitar por tenant del request
-        tenant_id = get_tenant(self.context.get('request').user) if self.context.get('request') else None
+        # Limitar por tenant: si admin y envía reflexo_id, validar en ese tenant; sino usar tenant del usuario
+        req = self.context.get('request')
+        tenant_id = None
+        if req is not None and req.user is not None:
+            if is_global_admin(req.user):
+                # usar el reflexo_id enviado si está disponible
+                provided = (self.initial_data or {}).get('reflexo_id')
+                tenant_id = int(provided) if provided not in (None, '',) else get_tenant(req.user)
+            else:
+                tenant_id = get_tenant(req.user)
         qs = AppointmentStatus.objects.all()
         if tenant_id is not None:
             qs = qs.filter(reflexo_id=tenant_id)

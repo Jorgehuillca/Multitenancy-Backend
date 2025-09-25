@@ -20,6 +20,9 @@ class Patient(models.Model):
         null=True,      # permite que sea vacío temporalmente
         blank=True      # permite que el formulario del admin lo deje vacío
     )
+
+    # Identificador secuencial por tenant (no reemplaza el ID global)
+    local_id = models.IntegerField(null=True, blank=True, verbose_name="ID local (por empresa)")
     
     # Información personal
     document_number = models.CharField(max_length=20, unique=True, verbose_name="Número de documento")
@@ -71,7 +74,14 @@ class Patient(models.Model):
         db_table = 'patients'
         verbose_name = 'Paciente'
         verbose_name_plural = 'Pacientes'
-        ordering = ['-created_at']
+        ordering = ['reflexo_id', 'local_id', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['reflexo', 'local_id'],
+                name='uniq_patient_local_id_per_reflexo',
+                condition=models.Q(local_id__isnull=False)
+            )
+        ]
 
     def soft_delete(self):
         """Soft delete del paciente."""

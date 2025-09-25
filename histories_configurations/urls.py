@@ -2,6 +2,7 @@ from django.urls import path
 from .views.history import histories_list, history_create, history_update, history_delete
 from .views.document_type import document_types_list, document_type_create, document_type_delete
 from .views.payment_type import payment_types_list, payment_type_create, payment_type_delete, payment_type_edit
+from .views.payment_status import payment_statuses_list, payment_status_create, payment_status_edit, payment_status_delete
 from .views.predetermined_price import predetermined_prices_list, predetermined_price_create, predetermined_price_update, predetermined_price_delete
 
 urlpatterns = [
@@ -19,6 +20,12 @@ urlpatterns = [
     path("payment_types/create/", payment_type_create, name="payment_type_create"),  # Para crear un tipo de pago
     path("payment_types/<int:pk>/delete/", payment_type_delete, name="payment_type_delete"),  # Para eliminar un tipo de pago
     path('payment_types/<int:pk>/edit/', payment_type_edit, name='payment_type_edit'),
+
+    # Payment Statuses
+    path("payment_statuses/", payment_statuses_list, name="payment_statuses_list"),
+    path("payment_statuses/create/", payment_status_create, name="payment_status_create"),
+    path("payment_statuses/<int:pk>/edit/", payment_status_edit, name="payment_status_edit"),
+    path("payment_statuses/<int:pk>/delete/", payment_status_delete, name="payment_status_delete"),
 
     # Predetermined Prices
     path("predetermined_prices/", predetermined_prices_list, name="predetermined_prices_list"),  # Para listar precios predeterminados

@@ -11,7 +11,12 @@ from .views.medical_record import ( MedicalRecordListCreateAPIView, MedicalRecor
 urlpatterns = [
      # URLs de diagnósticos
      path('diagnoses/', DiagnosisListCreateAPIView.as_view(), name='diagnosis-list-create'), 
-     path('diagnoses/<int:pk>/', DiagnosisRetrieveUpdateDestroyAPIView.as_view(), name='diagnosis-detail'), 
+     # Ruta RESTful estándar (GET/PUT/PATCH/DELETE) por id
+     path('diagnoses/<int:pk>/', DiagnosisRetrieveUpdateDestroyAPIView.as_view(), name='diagnosis-detail-main'),
+     path('diagnoses/<int:pk>/delete/', DiagnosisRetrieveUpdateDestroyAPIView.as_view(),
+     name='diagnosis-detail'),
+     path('diagnoses/<int:pk>/edit/', DiagnosisRetrieveUpdateDestroyAPIView.as_view(),
+     name='diagnosis-detail'),
      path('diagnoses/search/', DiagnosisSearchAPIView.as_view(), name='diagnosis-search'),
      
      # URLs de pacientes

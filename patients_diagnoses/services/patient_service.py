@@ -141,6 +141,23 @@ class PatientService:
                 if tenant_id is None:
                     raise ValidationError({"tenant": "El usuario no tiene una empresa asignada (reflexo). Contacte al administrador."})
                 data['reflexo_id'] = tenant_id
+        # Asignar local_id secuencial por tenant si no fue proporcionado
+        if data.get('reflexo'):
+            tenant_id = data['reflexo'].id
+        else:
+            tenant_id = data.get('reflexo_id')
+        # Solo si tenemos tenant y no viene local_id fijado
+        if tenant_id and not data.get('local_id'):
+            # Bloqueo a nivel de filas del tenant para reducir condiciones de carrera
+            # (esta función ya está dentro de @transaction.atomic)
+            from django.db.models import Max
+            max_local = (
+                Patient.all_objects.select_for_update()
+                .filter(reflexo_id=tenant_id)
+                .aggregate(m=Max('local_id'))['m']
+            )
+            data['local_id'] = (max_local or 0) + 1
+
         patient = Patient.objects.create(**data)
         return patient, True, False
 

@@ -46,6 +46,19 @@ class AppointmentStatus(models.Model):
     def __str__(self):
         return self.name
     
+    def clean(self):
+        """Evita duplicados por (reflexo, name) con mensaje amigable en Admin.
+        La restricción de BD ya existe; esto mejora el feedback del formulario.
+        """
+        if self.reflexo_id is None or not self.name:
+            return
+        qs = AppointmentStatus.objects.filter(reflexo_id=self.reflexo_id, name__iexact=self.name)
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        if qs.exists():
+            from django.core.exceptions import ValidationError
+            raise ValidationError({'name': ['Ya existe un estado con este nombre en esta empresa (tenant).']})
+    
     @property
     def appointments_count(self):
         """Retorna el número de citas con este estado"""

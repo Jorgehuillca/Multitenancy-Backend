@@ -1,6 +1,6 @@
 from django.urls import path
-from .views.auth import LoginView, RegisterView
-from .views.user import UserView
+from .views.auth import LoginView, RegisterView, LogoutView
+from .views.user import UserListView, UserCreateView, UserEditView, AdminUserDeleteView
 from .views.permission import PermissionView, RoleView
 
 app_name = 'architect'
@@ -9,9 +9,13 @@ urlpatterns = [
     # Autenticación
     path('auth/login/', LoginView.as_view(), name='login'),
     path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/logout/', LogoutView.as_view(), name='logout'),
     
     # Usuarios
-    path('users/', UserView.as_view(), name='users'),
+    path('users/', UserListView.as_view(), name='users'),  # GET
+    path('users/create/', UserCreateView.as_view(), name='users-create'),  # POST
+    path('users/<int:pk>/edit/', UserEditView.as_view(), name='users-edit'),  # PUT/PATCH
+    path('users/<int:pk>/delete/', AdminUserDeleteView.as_view(), name='users-delete'),  # DELETE (hard delete)
     
     # Permisos
     path('permissions/', PermissionView.as_view(), name='permissions'),

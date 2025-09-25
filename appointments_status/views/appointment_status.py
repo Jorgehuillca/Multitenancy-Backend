@@ -43,10 +43,18 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        # Asignar el tenant del usuario al crear
+        # Asignar tenant en create
         from architect.utils.tenant import get_tenant, is_global_admin
-        tenant_id = get_tenant(self.request.user)
-        serializer.save(reflexo_id=tenant_id)
+        if is_global_admin(self.request.user):
+            # Admin: permitir que envíe reflexo_id; si no lo envía, usar su tenant
+            provided_reflexo = serializer.validated_data.get('reflexo')
+            if provided_reflexo is not None:
+                serializer.save()
+            else:
+                serializer.save(reflexo_id=get_tenant(self.request.user))
+        else:
+            # Usuario de empresa: forzar su tenant
+            serializer.save(reflexo_id=get_tenant(self.request.user))
 
     def perform_update(self, serializer):
         # Evitar que no-admin cambie de tenant
@@ -61,10 +69,20 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        Hard delete (global): elimina definitivamente el estado de cita.
+        DELETE detail:
+        - Por defecto: soft delete (marca deleted_at).
+        - ?hard=true: hard delete (elimina definitivamente; no queda en DB ni Admin).
         """
+        from django.utils import timezone
         instance = self.get_object()
-        instance.delete()
+        hard_param = str(request.query_params.get('hard', '')).lower()
+        hard = hard_param in ('1', 'true', 'yes')
+        if hard:
+            instance.delete()
+        else:
+            if getattr(instance, 'deleted_at', None) is None:
+                instance.deleted_at = timezone.now()
+                instance.save(update_fields=['deleted_at', 'updated_at'])
         return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=False, methods=['get'])

@@ -191,6 +191,9 @@ class PatientSerializer(serializers.ModelSerializer):
 class PatientListSerializer(serializers.ModelSerializer):
     """Serializer simplificado para listar pacientes."""
     
+    # Renombrar campos del modelo sin cambiar DB
+    last_name_paternal = serializers.CharField(source='paternal_lastname', read_only=True)
+    last_name_maternal = serializers.CharField(source='maternal_lastname', read_only=True)
     full_name = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
     region_name = serializers.CharField(source='region.name', read_only=True)
@@ -199,7 +202,9 @@ class PatientListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = [
-            'id', 'document_number', 'full_name', 'age', 'sex',
+            'id', 'document_number',
+            'last_name_paternal', 'last_name_maternal', 'name',
+            'full_name', 'age', 'sex',
             'phone1', 'email', 'region_name', 'document_type_name',
             'created_at'
         ]

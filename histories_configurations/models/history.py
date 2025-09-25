@@ -18,6 +18,9 @@ class History(models.Model):
         null=True,      # permite que sea vacío temporalmente
         blank=True      # permite que el formulario del admin lo deje vacío
     )
+
+    # Identificador secuencial por empresa (no reemplaza el ID global)
+    local_id = models.IntegerField(null=True, blank=True, verbose_name="ID local (por empresa)")
     
     # Relación con paciente
     patient = models.ForeignKey('patients_diagnoses.Patient', on_delete=models.CASCADE, verbose_name="Paciente")
@@ -54,8 +57,38 @@ class History(models.Model):
     def __str__(self):
         return f"Historial de {self.patient}"
 
+    def clean(self):
+        """
+        Impedir más de un historial ACTIVO (deleted_at IS NULL) por paciente.
+        Se ejecuta desde save() y también puede ser llamada por formularios.
+        """
+        from django.core.exceptions import ValidationError
+        if self.patient_id is None:
+            return
+        qs = History.active.filter(patient_id=self.patient_id).exclude(pk=self.pk)
+        if qs.exists():
+            raise ValidationError({'patient': 'Este paciente ya tiene un historial activo.'})
+
+    def save(self, *args, **kwargs):
+        # Garantizar validaciones siempre (Admin y API)
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     class Meta:
         db_table = "histories"
         verbose_name = "Historial"
         verbose_name_plural = "Historiales"
-        ordering = ['-created_at']
+        ordering = ['reflexo_id', 'local_id', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['reflexo', 'local_id'],
+                name='uniq_history_local_id_per_reflexo',
+                condition=models.Q(local_id__isnull=False)
+            ),
+            # Evitar duplicados: un único historial activo por paciente
+            models.UniqueConstraint(
+                fields=['patient'],
+                name='uniq_active_history_per_patient',
+                condition=models.Q(deleted_at__isnull=True)
+            ),
+        ]

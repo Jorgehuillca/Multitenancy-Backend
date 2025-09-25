@@ -83,12 +83,13 @@ class CurrentTenantReflexoFilter(admin.SimpleListFilter):
 
 @admin.register(Patient)
 class PatientAdmin(BaseTenantAdmin):
+    # Valores por defecto (se ajustan dinámicamente en get_list_display/get_search_fields)
     list_display = (
-        'id', 'document_number', 'name', 'paternal_lastname', 'maternal_lastname',
+        'local_id', 'document_number', 'name', 'paternal_lastname', 'maternal_lastname',
         'phone1', 'email', 'reflexo'
     )
     search_fields = (
-        'id', 'document_number', 'name', 'paternal_lastname', 'maternal_lastname', 'personal_reference'
+        'local_id', 'document_number', 'name', 'paternal_lastname', 'maternal_lastname', 'personal_reference'
     )
     list_filter = (
         'sex', 'region', 'province', 'district', 'document_type', 'created_at', 'deleted_at'
@@ -101,6 +102,26 @@ class PatientAdmin(BaseTenantAdmin):
         if is_global_admin(request.user):
             return tuple(['reflexo'] + base)
         return tuple([CurrentTenantReflexoFilter] + base)
+
+    def get_list_display(self, request):
+        base = list(self.list_display)
+        # Para admins globales, incluir el ID global por conveniencia
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')  # después de local_id
+        else:
+            # Asegurar que el ID global no aparezca para usuarios de empresa
+            base = [f for f in base if f != 'id']
+        return tuple(base)
+
+    def get_search_fields(self, request):
+        base = list(self.search_fields)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -124,19 +145,30 @@ class PatientAdmin(BaseTenantAdmin):
         return super().changelist_view(request, extra_context)
 
 @admin.register(Diagnosis)
-class DiagnosisAdmin(BaseTenantAdmin):
-    list_display = ('code', 'name', 'created_at')
+class DiagnosisAdmin(admin.ModelAdmin):
+    list_display = ('row_number_display', 'code', 'name', 'created_at')
     search_fields = ('code', 'name')
     ordering = ('code',)
-    # readonly_fields dinámicos en BaseTenantAdmin
-    
+    # Diagnósticos son GLOBALES: no aplicar filtrado por tenant ni forzar reflexo
+
     def get_queryset(self, request):
+        from django.db.models.expressions import Window
+        from django.db.models.functions import RowNumber
+        from django.db.models import F
         qs = super().get_queryset(request)
         # Ocultar por defecto los diagnósticos soft-deleted en el admin
         qs = qs.filter(deleted_at__isnull=True)
-        if is_global_admin(request.user):
-            return qs
-        return filter_by_tenant(qs, request.user, field='reflexo')
+        # Numeración global y estable por código
+        return qs.annotate(row_number=Window(expression=RowNumber(), order_by=F('code').asc()))
+
+    def row_number_display(self, obj):
+        return getattr(obj, 'row_number', None)
+    row_number_display.short_description = 'N°'
+    row_number_display.admin_order_field = 'row_number'
+
+    def save_model(self, request, obj, form, change):
+        # No forzar tenant (reflexo). Los diagnósticos son globales.
+        return super().save_model(request, obj, form, change)
 
 
 @admin.register(MedicalRecord)
@@ -145,6 +177,9 @@ class MedicalRecordAdmin(BaseTenantAdmin):
     list_filter = ('status', 'diagnosis_date', 'created_at', 'deleted_at')
     search_fields = ('patient__name', 'patient__document_number', 'diagnose__name', 'diagnose__code')
     ordering = ('-diagnosis_date', '-created_at')
+    # Autocomplete para datasets grandes (sólo paciente). Para diagnóstico usamos raw_id para evitar dropdown enorme.
+    autocomplete_fields = ('patient',)
+    raw_id_fields = ('diagnose',)
     
     fieldsets = (
         ('Información del Paciente', {
@@ -180,10 +215,8 @@ class MedicalRecordAdmin(BaseTenantAdmin):
                     base_qs = base_qs.filter(reflexo_id=tenant_id)
             kwargs['queryset'] = base_qs
         elif db_field.name == 'diagnose':
-            base_qs = Diagnosis.objects.filter(deleted_at__isnull=True)
-            if not is_global_admin(request.user):
-                tenant_id = get_tenant(request.user)
-                if tenant_id is not None:
-                    base_qs = base_qs.filter(reflexo_id=tenant_id)
-            kwargs['queryset'] = base_qs
+            # Diagnósticos globales: NO filtrar por tenant.
+            kwargs['queryset'] = Diagnosis.objects.filter(deleted_at__isnull=True)
+            # Importante: delegar a super() para que Django aplique raw_id_fields
+            return super().formfield_for_foreignkey(db_field, request, **kwargs)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)

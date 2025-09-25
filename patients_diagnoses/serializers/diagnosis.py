@@ -4,16 +4,19 @@ import re
 from reflexo.models import Reflexo
 
 class DiagnosisSerializer(serializers.ModelSerializer):
-    """Serializer para el modelo Diagnosis."""
-    
-    # Tenant (reflexo)
-    reflexo_id = serializers.PrimaryKeyRelatedField(queryset=Reflexo.objects.all(), source='reflexo', required=False)
-    reflexo_name = serializers.CharField(source='reflexo.name', read_only=True)
+    """Serializer para el modelo Diagnosis.
+    Los diagnósticos ahora son GLOBALES (no tenant). Se mantienen campos de reflexo solo en lectura
+    por compatibilidad cuando existan valores legacy.
+    """
+    # Tenant (legacy/compatibilidad): solo lectura
+    reflexo_id = serializers.IntegerField(source='reflexo_id', read_only=True, required=False)
+    reflexo_name = serializers.CharField(source='reflexo.name', read_only=True, required=False)
 
     class Meta:
         model = Diagnosis
         fields = [
-            'id', 'code', 'name', 'reflexo_id', 'reflexo_name',
+            'id', 'code', 'name',
+            'reflexo_id', 'reflexo_name',  # legacy (solo lectura)
             'created_at', 'updated_at', 'deleted_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'deleted_at']
@@ -24,22 +27,12 @@ class DiagnosisSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("El código solo debe contener letras y números.")
         if len(value) > 255:
             raise serializers.ValidationError("El código no debe superar los 255 caracteres.")
-        
-        # Validar unicidad por tenant (reflexo, code)
-        reflexo_id = None
-        if self.instance is not None:
-            reflexo_id = getattr(self.instance, 'reflexo_id', None)
-        if reflexo_id is None:
-            reflexo_id = self.initial_data.get('reflexo_id') if isinstance(self.initial_data, dict) else None
+        # Unicidad GLOBAL por código (no-tenant)
         qs = Diagnosis.all_objects.filter(code=value)
-        if reflexo_id is None:
-            qs = qs.filter(reflexo__isnull=True)
-        else:
-            qs = qs.filter(reflexo_id=reflexo_id)
         if self.instance is not None:
             qs = qs.exclude(id=self.instance.id)
         if qs.exists():
-            raise serializers.ValidationError("Ya existe un diagnóstico con este código en la misma empresa (tenant).")
+            raise serializers.ValidationError("Ya existe un diagnóstico con este código.")
         return value
 
     def validate_name(self, value):
@@ -47,6 +40,22 @@ class DiagnosisSerializer(serializers.ModelSerializer):
         if not value.strip():
             raise serializers.ValidationError("El nombre es obligatorio.")
         return value
+
+    # Forzar globalidad (reflexo=None)
+    def create(self, validated_data):
+        # eliminar cualquier rastro de 'reflexo' que pudiera llegar
+        validated_data.pop('reflexo', None)
+        obj = Diagnosis.objects.create(reflexo=None, **validated_data)
+        return obj
+
+    def update(self, instance, validated_data):
+        # impedir cambios de tenant
+        validated_data.pop('reflexo', None)
+        for attr, val in validated_data.items():
+            setattr(instance, attr, val)
+        instance.reflexo_id = None
+        instance.save()
+        return instance
 
 class DiagnosisListSerializer(serializers.ModelSerializer):
     """Serializer simplificado para listar diagnósticos."""

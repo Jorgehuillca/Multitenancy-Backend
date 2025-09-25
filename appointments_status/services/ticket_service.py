@@ -37,9 +37,10 @@ class TicketService:
             
             payload = dict(data)
 
-            # Generar número de ticket único si no se proporciona
+            # Generar número de ticket único si no se proporciona (por tenant)
             if 'ticket_number' not in payload:
-                payload['ticket_number'] = self.generate_ticket_number()
+                # Nota: aún no hemos cargado appt; generaremos luego de obtenerla
+                pass
 
             # Convertir appointment → appointment_id (FK por ID)
             try:
@@ -47,11 +48,11 @@ class TicketService:
             except (KeyError, ValueError, TypeError):
                 return Response({'error': 'appointment debe ser un ID entero'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Validar que la cita exista y (si aplica) pertenezca al mismo tenant
+            # Validar que la cita exista (activa) y (si aplica) pertenezca al mismo tenant
             try:
-                appt = Appointment.objects.get(id=payload['appointment_id'])
+                appt = Appointment.objects.get(id=payload['appointment_id'], deleted_at__isnull=True)
             except Appointment.DoesNotExist:
-                return Response({'error': 'La cita (appointment) no existe'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'La cita (appointment) no existe o fue eliminada'}, status=status.HTTP_400_BAD_REQUEST)
 
             # Validación de tenant: un usuario no admin solo puede crear tickets para citas de su tenant
             if user and not is_global_admin(user):
@@ -86,9 +87,19 @@ class TicketService:
             }
             payload['payment_method'] = aliases.get(method, method)
 
-            # Aislar por tenant: si viene user, forzar reflexo
+            # Aislar por tenant y coherencia: siempre usar el tenant de la cita
+            payload['reflexo_id'] = appt.reflexo_id
+            if 'ticket_number' not in payload:
+                payload['ticket_number'] = self.generate_ticket_number(appt.reflexo_id)
             if user and not is_global_admin(user):
-                payload['reflexo_id'] = get_tenant(user)
+                # Además, validar que el tenant del usuario coincida con el de la cita
+                tenant_id = get_tenant(user)
+                if appt.reflexo_id and appt.reflexo_id != tenant_id:
+                    return Response({'error': 'La cita no pertenece a tu tenant'}, status=status.HTTP_403_FORBIDDEN)
+
+            # No permitir duplicados: un ticket activo por cita
+            if Ticket.objects.filter(appointment_id=payload['appointment_id'], is_active=True).exists():
+                return Response({'error': 'Ya existe un ticket activo para esta cita'}, status=status.HTTP_400_BAD_REQUEST)
 
             try:
                 ticket = Ticket.objects.create(**payload)
@@ -411,24 +422,27 @@ class TicketService:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    def generate_ticket_number(self):
+    def generate_ticket_number(self, reflexo_id=None):
         """
-        Genera un número único de ticket en formato secuencial TKT-001, TKT-002, etc.
+        Genera un número único de ticket por tenant en formato secuencial TKT-001, TKT-002, etc.
         
         Args:
-            None
+            reflexo_id (int|None): Tenant para el cual generar la secuencia. Si es None, usa secuencia global.
             
         Returns:
             str: Número de ticket único
         """
-        # Obtener el último ticket creado
-        last_ticket = Ticket.objects.order_by('-id').first()
+        # Filtrar por tenant si se provee
+        qs = Ticket.objects.all()
+        if reflexo_id is not None:
+            qs = qs.filter(reflexo_id=reflexo_id)
+        last_ticket = qs.order_by('-id').first()
         
         if last_ticket:
             # Extraer el número del último ticket
             try:
                 # Buscar el patrón TKT-XXX en el número del ticket
-                match = re.search(r'TKT-(\d+)', last_ticket.ticket_number)
+                match = re.search(r'TKT-(\d+)', last_ticket.ticket_number or '')
                 if match:
                     last_number = int(match.group(1))
                     next_number = last_number + 1

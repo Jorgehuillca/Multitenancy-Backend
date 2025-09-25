@@ -10,8 +10,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from therapists.models.therapist import Therapist
-from therapists.serializers.therapist import TherapistSerializer
+from therapists.serializers.therapist import TherapistSerializer, TherapistPhotoSerializer
 from architect.utils.tenant import filter_by_tenant, is_global_admin
+from django.core.files.storage import default_storage
 
 
 class TherapistViewSet(viewsets.ModelViewSet):
@@ -73,11 +74,29 @@ class TherapistViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        # Asigna tenant automáticamente si no es admin global
+        # Asigna tenant y local_id secuencial por empresa
+        from django.db import transaction
+        from django.db.models import Max
+        # Determinar tenant destino
         if not is_global_admin(self.request.user):
-            serializer.save(reflexo_id=getattr(self.request.user, 'reflexo_id', None))
+            tenant_id = getattr(self.request.user, 'reflexo_id', None)
         else:
-            serializer.save()
+            # Para admin, respetar lo que venga en serializer.validated_data (reflexo)
+            tenant_id = serializer.validated_data.get('reflexo').id if serializer.validated_data.get('reflexo') else None
+
+        with transaction.atomic():
+            next_local = None
+            if tenant_id:
+                max_local = (
+                    Therapist.objects.select_for_update()
+                    .filter(reflexo_id=tenant_id)
+                    .aggregate(m=Max('local_id'))['m']
+                )
+                next_local = (max_local or 0) + 1
+            if not is_global_admin(self.request.user):
+                serializer.save(reflexo_id=tenant_id, local_id=next_local)
+            else:
+                serializer.save(local_id=next_local)
 
     def perform_update(self, serializer):
         # Evita cambiar el tenant para usuarios no admin
@@ -139,8 +158,49 @@ class TherapistViewSet(viewsets.ModelViewSet):
         if therapist.deleted_at is None:
             # Idempotente: si ya está activo, responder 200 con el estado actual
             return Response(self.get_serializer(therapist).data)
-        therapist.restore()
-        return Response(self.get_serializer(therapist).data)
+
+    @action(detail=True, methods=["post", "delete"], url_path="photo")
+    def photo(self, request, pk=None):
+        """
+        POST  /therapists/{id}/photo/  -> sube/asigna foto (multipart JSON)
+        DELETE /therapists/{id}/photo/ -> elimina archivo físico y limpia BD
+        Respeta aislamiento por tenant para usuarios no admin.
+        """
+        # Obtener terapeuta respetando tenant
+        try:
+            qs = Therapist.objects.all()
+            if not is_global_admin(request.user):
+                qs = filter_by_tenant(qs, request.user, field='reflexo')
+            therapist = qs.get(pk=pk)
+        except Therapist.DoesNotExist:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.method.lower() == 'post':
+            serializer = TherapistPhotoSerializer(therapist, data=request.data, partial=True, context={"request": request})
+            if serializer.is_valid():
+                serializer.save()
+                # Responder con el serializer principal para incluir profile_picture_url
+                return Response({
+                    "message": "Foto actualizada",
+                    "therapist": TherapistSerializer(therapist, context={"request": request}).data
+                })
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # DELETE
+        name = therapist.profile_picture or ""
+        if name:
+            try:
+                if default_storage.exists(name):
+                    default_storage.delete(name)
+            except Exception:
+                pass
+            therapist.profile_picture = None
+            therapist.save(update_fields=['profile_picture', 'updated_at'])
+            return Response({
+                "message": "Foto eliminada definitivamente",
+                "therapist": TherapistSerializer(therapist, context={"request": request}).data
+            }, status=status.HTTP_200_OK)
+        return Response({"message": "El terapeuta no tiene foto para eliminar"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 def index(request):

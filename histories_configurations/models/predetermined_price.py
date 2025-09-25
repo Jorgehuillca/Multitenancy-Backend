@@ -23,6 +23,9 @@ class PredeterminedPrice(models.Model):
     )
     price = models.DecimalField(max_digits=8, decimal_places=2, verbose_name="Precio")
 
+    # Identificador secuencial local por empresa (tenant)
+    local_id = models.IntegerField(null=True, blank=True, verbose_name="ID local (por empresa)")
+
     # Campos de auditoría
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Fecha de actualización")
@@ -37,13 +40,19 @@ class PredeterminedPrice(models.Model):
         self.save(update_fields=["deleted_at"])
 
     def __str__(self):
-        return f"{self.name} - {self.price}"
+        num = self.local_id if self.local_id is not None else self.id
+        return f"Precio {num} - {self.name} - {self.price}"
 
     class Meta:
         db_table = "predetermined_prices"
         verbose_name = "Precio Predeterminado"
         verbose_name_plural = "Precios Predeterminados"
-        ordering = ['name']
+        ordering = ['reflexo_id', 'local_id', 'name']
         constraints = [
-            models.UniqueConstraint(fields=['reflexo', 'name'], name='uniq_predetermined_price_per_reflexo_name')
+            models.UniqueConstraint(fields=['reflexo', 'name'], name='uniq_predetermined_price_per_reflexo_name'),
+            models.UniqueConstraint(
+                fields=['reflexo', 'local_id'],
+                name='uniq_predetermined_price_local_id_per_reflexo',
+                condition=models.Q(local_id__isnull=False)
+            )
         ]

@@ -10,19 +10,20 @@ from .views.verification import VerificationCodeView, EmailChangeView, EmailChan
 # Create router for viewsets
 router = DefaultRouter()
 
-# User URLs
 urlpatterns = [
     # User management
     path('users/me/', UserDetailView.as_view(), name='user-detail'),
     path('users/me/update/', UserUpdateView.as_view(), name='user-update'),
     path('users/me/delete/', UserDeleteView.as_view(), name='user-delete'),
     path('users/me/photo/', UserProfilePhotoView.as_view(), name='user-photo'),
+    # Aliases solicitados
+    path('users/me/create/photo/', UserProfilePhotoView.as_view(), name='user-photo-create'),
+    path('users/me/delete/photo/', UserProfilePhotoView.as_view(), name='user-photo-delete'),
     path('users/search/', UserSearchView.as_view(), name='user-search'),
     path('users/profile/', UserProfileView.as_view(), name='user-profile'),
     
     # Profile management
     path('profiles/me/', ProfileDetailView.as_view(), name='profile-detail'),
-    path('profiles/create/', ProfileCreateView.as_view(), name='profile-create'),
     path('profiles/public/<str:user_name>/', PublicProfileView.as_view(), name='public-profile'),
     path('profiles/settings/', ProfileSettingsView.as_view(), name='profile-settings'),
     path('profiles/completion/', ProfileCompletionView.as_view(), name='profile-completion'),

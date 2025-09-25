@@ -29,21 +29,40 @@ class UserSerializer(serializers.ModelSerializer):
         return f"{obj.name} {obj.paternal_lastname} {obj.maternal_lastname}".strip()
     
     def get_profile_photo_url(self, obj):
-        """Retorna la URL de la foto de perfil"""
-        return obj.photo_url if obj.photo_url else None
+        """Retorna la URL de la foto de perfil como string serializable.
+        Si no hay foto, devuelve None. Maneja archivos inexistentes sin lanzar error.
+        """
+        try:
+            if not getattr(obj, 'photo_url', None):
+                return None
+            # Si el campo es File/ImageField, intentar usar .url; si falla, None
+            file_field = obj.photo_url
+            # Cuando hay nombre pero el archivo no existe físicamente, .url puede fallar
+            return getattr(file_field, 'url', None) or (file_field.name if hasattr(file_field, 'name') else None)
+        except Exception:
+            return None
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """Serializer para actualización de datos básicos del usuario.
     
-    Permite actualizar nombre, apellido y teléfono.
-    No incluye campos sensibles como email o username.
+    Permite actualizar user_name, nombre, apellido y teléfono.
+    No incluye campos sensibles como email.
     """
     
     class Meta:
         model = User
         fields = [
-            'name', 'paternal_lastname', 'maternal_lastname', 'phone'
+            'user_name', 'name', 'paternal_lastname', 'maternal_lastname', 'phone'
         ]
+    
+    def validate_user_name(self, value):
+        """Valida que el user_name sea único."""
+        if value:
+            # Verificar que el user_name no esté en uso por otro usuario (excluyendo el actual)
+            current_user = self.instance
+            if User.objects.filter(user_name=value).exclude(id=current_user.id).exists():
+                raise serializers.ValidationError("Este nombre de usuario ya está en uso")
+        return value
     
     def validate_phone(self, value):
         """Valida el formato del número de teléfono."""

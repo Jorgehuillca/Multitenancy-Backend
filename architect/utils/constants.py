@@ -23,10 +23,13 @@ PERMISSION_TYPES = {
     'DELETE': 'delete'
 }
 
-# Configuración de JWT
+# Configuración de JWT (informativo)
+# Nota: la configuración EFECTIVA de SimpleJWT se hace en settings.SIMPLE_JWT.
+# Estos valores NO son usados por la autenticación JWT del proyecto; se
+# mantienen solo como referencia para otras utilidades.
 JWT_SETTINGS = {
-    'ACCESS_TOKEN_LIFETIME': 5,  # minutos
-    'REFRESH_TOKEN_LIFETIME': 1440,  # minutos (24 horas)
+    'ACCESS_TOKEN_LIFETIME_MIN': None,  # ver settings.SIMPLE_JWT
+    'REFRESH_TOKEN_LIFETIME_MIN': None,  # ver settings.SIMPLE_JWT
 }
 
 # Mensajes del sistema

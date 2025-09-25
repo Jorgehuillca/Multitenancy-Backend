@@ -1,20 +1,30 @@
 import json
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.permissions import IsAuthenticated
 from ..models.predetermined_price import PredeterminedPrice
-from architect.utils.tenant import get_tenant
+from architect.utils.tenant import get_tenant, filter_by_tenant, is_global_admin
 
 @csrf_exempt
+@api_view(["GET"])
+@authentication_classes([SessionAuthentication, BasicAuthentication])
+@permission_classes([IsAuthenticated])
 def predetermined_prices_list(request):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
-    
-    tenant_id = get_tenant(request.user)
+
+    # Aislamiento por tenant (admins globales ven todo)
     qs = PredeterminedPrice.objects.filter(deleted_at__isnull=True)
-    if tenant_id is not None:
-        qs = qs.filter(reflexo_id=tenant_id)
-    else:
-        qs = qs.none()
+    try:
+        if is_global_admin(request.user) or getattr(request.user, 'is_staff', False):
+            pass
+        else:
+            qs = filter_by_tenant(qs, request.user, field='reflexo')
+    except Exception:
+        qs = filter_by_tenant(qs, request.user, field='reflexo')
+
     data = [{
         "id": p.id,
         "name": p.name,
@@ -24,45 +34,58 @@ def predetermined_prices_list(request):
 
 
 @csrf_exempt
+@api_view(["POST"])
+@authentication_classes([SessionAuthentication, BasicAuthentication])
+@permission_classes([IsAuthenticated])
 def predetermined_price_create(request):
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-    
+
     try:
-        payload = json.loads(request.body.decode())
+        payload = json.loads(request.body.decode() or '{}')
     except json.JSONDecodeError:
         return JsonResponse({"error": "JSON inválido"}, status=400)
-    
+
     name = payload.get("name")
     price = payload.get("price")
-
     if not name or price is None:
         return JsonResponse({"error": "Campos obligatorios faltantes"}, status=400)
-    
-    tenant_id = get_tenant(request.user)
-    if tenant_id is None:
-        return JsonResponse({"error": "Usuario sin empresa asignada"}, status=403)
+
+    # Determinar tenant según rol
+    if is_global_admin(request.user) or getattr(request.user, 'is_staff', False):
+        tenant_id = payload.get('reflexo_id') or payload.get('reflexo')
+        if tenant_id is None:
+            return JsonResponse({"error": "Admin debe especificar reflexo_id"}, status=400)
+        try:
+            tenant_id = int(tenant_id)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "reflexo_id inválido"}, status=400)
+    else:
+        tenant_id = get_tenant(request.user)
+        if tenant_id is None:
+            return JsonResponse({"error": "Usuario sin empresa asignada"}, status=403)
+
     p = PredeterminedPrice.objects.create(name=name, price=price, reflexo_id=tenant_id)
-    return JsonResponse({"id": p.id}, status=201)
+    return JsonResponse({"id": p.id, "reflexo_id": tenant_id}, status=201)
 
 
 @csrf_exempt
+@api_view(["PUT", "PATCH", "POST"])
+@authentication_classes([SessionAuthentication, BasicAuthentication])
+@permission_classes([IsAuthenticated])
 def predetermined_price_update(request, pk):
     if request.method not in ["PUT", "PATCH", "POST"]:
         return HttpResponseNotAllowed(["PUT", "PATCH", "POST"])
-    
+
     try:
-        payload = json.loads(request.body.decode())
+        payload = json.loads(request.body.decode() or '{}')
     except json.JSONDecodeError:
         return JsonResponse({"error": "JSON inválido"}, status=400)
-    
+
     try:
-        tenant_id = get_tenant(request.user)
         base = PredeterminedPrice.objects.filter(deleted_at__isnull=True)
-        if tenant_id is not None:
-            base = base.filter(reflexo_id=tenant_id)
-        else:
-            base = base.none()
+        if not (is_global_admin(request.user) or getattr(request.user, 'is_staff', False)):
+            base = filter_by_tenant(base, request.user, field='reflexo')
         p = base.get(pk=pk)
     except PredeterminedPrice.DoesNotExist:
         return JsonResponse({"error": "No encontrado"}, status=404)
@@ -91,14 +114,21 @@ def predetermined_price_update(request, pk):
 
 
 @csrf_exempt
+@api_view(["DELETE", "POST"])
+@authentication_classes([SessionAuthentication, BasicAuthentication])
+@permission_classes([IsAuthenticated])
 def predetermined_price_delete(request, pk):
     if request.method not in ["DELETE", "POST"]:
         return HttpResponseNotAllowed(["DELETE", "POST"])
-    
+
+    # Alcance por tenant (si aplica); eliminar definitivamente
+    base = PredeterminedPrice.objects.all()
+    if not (is_global_admin(request.user) or getattr(request.user, 'is_staff', False)):
+        base = filter_by_tenant(base, request.user, field='reflexo')
     try:
-        p = PredeterminedPrice.objects.filter(deleted_at__isnull=True).get(pk=pk)
+        p = base.get(pk=pk)
     except PredeterminedPrice.DoesNotExist:
         return JsonResponse({"error": "No encontrado"}, status=404)
-    
-    p.soft_delete()
-    return JsonResponse({"status": "deleted"})
+
+    p.delete()  # Hard delete: desaparece de Admin y de la BD
+    return JsonResponse({}, status=204)

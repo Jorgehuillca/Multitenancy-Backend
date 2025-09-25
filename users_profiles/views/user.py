@@ -76,12 +76,25 @@ class UserProfilePhotoView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request):
-        """Elimina la foto de perfil del usuario"""
-        if request.user.photo_url:
+        """Elimina la foto de perfil del usuario de forma definitiva.
+        - Borra el archivo del almacenamiento (MEDIA_ROOT / storage backend)
+        - Limpia el campo en la base de datos (User.photo_url = NULL)
+        Resultado: no queda rastro ni en Admin ni en la DB.
+        """
+        photo_field = getattr(request.user, 'photo_url', None)
+        if photo_field:
+            # Borrar archivo físico si existe
+            try:
+                if photo_field.name:
+                    photo_field.delete(save=False)
+            except Exception:
+                # Incluso si falla la eliminación del archivo, continuar limpiando la BD
+                pass
+            # Limpiar referencia en BD
             request.user.photo_url = None
-            request.user.save()
+            request.user.save(update_fields=['photo_url', 'updated_at'])
             return Response({
-                'message': 'Foto de perfil eliminada exitosamente'
+                'message': 'Foto de perfil eliminada definitivamente'
             }, status=status.HTTP_200_OK)
         
         return Response({
@@ -124,7 +137,9 @@ class UserDeleteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def delete(self, request):
-        """Elimina el usuario autenticado (soft delete)"""
+        """Elimina DEFINITIVAMENTE (hard delete) el usuario autenticado.
+        - Borra la fila de la BD, sin dejar rastro en Admin ni en la DB.
+        """
         user = request.user
         
         # Verificar que no sea superuser
@@ -132,12 +147,10 @@ class UserDeleteView(APIView):
             return Response({
                 'error': 'No se puede eliminar un superusuario'
             }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Realizar soft delete
-        user.soft_delete()
-        
+        # Hard delete por defecto: borra definitivamente la fila
+        user.delete()
         return Response({
-            'message': 'Usuario eliminado exitosamente'
+            'message': 'Usuario eliminado definitivamente'
         }, status=status.HTTP_200_OK)
     
     def get_serializer_context(self):

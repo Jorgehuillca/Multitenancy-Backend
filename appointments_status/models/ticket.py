@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from decimal import Decimal
 
 
@@ -20,8 +21,7 @@ class Ticket(models.Model):
     
     # Información del ticket
     ticket_number = models.CharField(
-        max_length=50, 
-        unique=True, 
+        max_length=50,
         verbose_name="Número de ticket"
     )
     payment_date = models.DateTimeField(
@@ -77,6 +77,19 @@ class Ticket(models.Model):
             models.Index(fields=['status']),
             models.Index(fields=['appointment']),  # Índice para la foreign key
         ]
+        constraints = [
+            # Evita duplicados: un ticket activo por cita
+            models.UniqueConstraint(
+                fields=['appointment'],
+                condition=Q(is_active=True),
+                name='uniq_active_ticket_per_appointment'
+            ),
+            # Ticket number único por tenant (reflexo)
+            models.UniqueConstraint(
+                fields=['reflexo', 'ticket_number'],
+                name='uniq_ticket_number_per_reflexo'
+            )
+        ]
     
     def __str__(self):
         return f"Ticket {self.ticket_number} - ${self.amount}"
@@ -113,3 +126,13 @@ class Ticket(models.Model):
         self.is_active = True
         self.deleted_at = None
         self.save(update_fields=['is_active', 'deleted_at', 'updated_at'])
+
+    def clean(self):
+        """Validación amigable en Admin para evitar duplicar ticket por cita activa."""
+        if self.appointment_id:
+            qs = Ticket.objects.filter(appointment_id=self.appointment_id, is_active=True)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                from django.core.exceptions import ValidationError
+                raise ValidationError({'appointment': ['Ya existe un ticket activo para esta cita.']})

@@ -18,6 +18,7 @@ def create_ticket_for_appointment(sender, instance, created, **kwargs):
 
     with transaction.atomic():
         Ticket.objects.create(
+            reflexo=instance.reflexo,
             appointment=instance,
             ticket_number=ticket_number,
             amount=instance.payment or 0,
@@ -53,6 +54,7 @@ def update_ticket_when_appointment_changes(sender, instance, created, **kwargs):
         # Si por alguna razón no existe, lo creamos sin volver a hacer save() en la cita
         ticket_service = TicketService()
         Ticket.objects.create(
+            reflexo=instance.reflexo,
             appointment=instance,
             ticket_number=instance.ticket_number or ticket_service.generate_ticket_number(),
             amount=instance.payment or 0,

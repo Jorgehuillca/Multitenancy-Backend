@@ -12,7 +12,8 @@ class Diagnosis(models.Model):
     Basado en la estructura de la tabla diagnoses de la BD.
     """
     
-    # Multitenant: cada diagnóstico pertenece a un tenant (Reflexo)
+    # Campo legacy para multitenancy (compatibilidad). Los diagnósticos ahora son GLOBALES
+    # y la unicidad se valida solo por "code" a nivel global.
     reflexo = models.ForeignKey(
         'reflexo.Reflexo',
         on_delete=models.CASCADE,
@@ -36,7 +37,8 @@ class Diagnosis(models.Model):
         verbose_name_plural = 'Diagnósticos'
         ordering = ['code']
         constraints = [
-            models.UniqueConstraint(fields=['reflexo', 'code'], name='uniq_diagnosis_per_reflexo_code')
+            # Unicidad GLOBAL por código (dejar de ser tenant)
+            models.UniqueConstraint(fields=['code'], name='uniq_diagnosis_code')
         ]
     
     # Managers

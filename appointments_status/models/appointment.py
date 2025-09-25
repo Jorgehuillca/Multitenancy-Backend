@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
  
 
@@ -16,6 +17,9 @@ class Appointment(models.Model):
         null=True,      # permite que sea vacío temporalmente
         blank=True      # permite que el formulario del admin lo deje vacío
     )
+
+    # Identificador secuencial por empresa (no reemplaza el ID global)
+    local_id = models.IntegerField(null=True, blank=True, verbose_name="ID local (por empresa)")
 
     # Relaciones con otros módulos
     history = models.ForeignKey('histories_configurations.History', on_delete=models.CASCADE, verbose_name="Historial")
@@ -52,16 +56,12 @@ class Appointment(models.Model):
     payment_type = models.ForeignKey('histories_configurations.PaymentType', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Tipo de pago")
     payment_status = models.ForeignKey('histories_configurations.PaymentStatus', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Estado de pago")
     
-    # Estado de la cita (enum en SQL)
-    APPOINTMENT_STATUS_CHOICES = [
-        ('COMPLETADO', 'Completado'),
-        ('PENDIENTE', 'Pendiente'),
-        ('ACTIVO', 'Activo'),
-    ]
-    appointment_status = models.CharField(
-        max_length=20,
-        choices=APPOINTMENT_STATUS_CHOICES,
-        default='PENDIENTE',
+    # Estado de la cita (relación a catálogo gestionado en AppointmentStatus)
+    appointment_status = models.ForeignKey(
+        'appointments_status.AppointmentStatus',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=False,
         verbose_name="Estado de la cita"
     )
     
@@ -74,14 +74,29 @@ class Appointment(models.Model):
         db_table = 'appointments'
         verbose_name = "Cita"
         verbose_name_plural = "Citas"
-        ordering = ['-appointment_date', '-hour']
+        ordering = ['reflexo_id', 'local_id', '-appointment_date', '-hour']
         indexes = [
             models.Index(fields=['appointment_date', 'hour']),
             models.Index(fields=['appointment_status']),
         ]
+        constraints = [
+            # Evita duplicar citas activas con el mismo par (patient, history)
+            models.UniqueConstraint(
+                fields=['patient', 'history'],
+                condition=Q(deleted_at__isnull=True),
+                name='uniq_active_patient_history'
+            ),
+            # Unicidad del número de cita por empresa cuando local_id no es nulo
+            models.UniqueConstraint(
+                fields=['reflexo', 'local_id'],
+                name='uniq_appointment_local_id_per_reflexo',
+                condition=Q(local_id__isnull=False)
+            )
+        ]
     
     def __str__(self):
-        return f"Cita {self.id} - {self.appointment_date} {self.hour}"
+        num = self.local_id or self.id
+        return f"Cita {num} - {self.appointment_date} {self.hour}"
     
     @property
     def is_completed(self):
@@ -96,3 +111,66 @@ class Appointment(models.Model):
         if self.appointment_date is None:
             return False
         return self.appointment_date.date() >= timezone.now().date()
+
+    def clean(self):
+        """Validaciones de consistencia multi-tenant y relaciones.
+        - patient, therapist y history deben pertenecer al mismo tenant (reflexo)
+        - history.patient debe coincidir con patient
+        - Asigna reflexo automáticamente si es determinable
+        """
+        errors = {}
+        # Cargar FKs si existen
+        patient = getattr(self, 'patient', None)
+        therapist = getattr(self, 'therapist', None)
+        history = getattr(self, 'history', None)
+
+        # Validar que history pertenezca al mismo patient
+        if history is not None and patient is not None and history.patient_id != patient.id:
+            errors['history'] = ['El historial no pertenece al paciente proporcionado.']
+
+        # Tenants
+        p_tid = getattr(patient, 'reflexo_id', None) if patient else None
+        t_tid = getattr(therapist, 'reflexo_id', None) if therapist else None
+        h_tid = getattr(history, 'reflexo_id', None) if history else None
+
+        # Si hay más de un tenant presente, deben coincidir
+        tenants = [t for t in [p_tid, t_tid, h_tid, self.reflexo_id] if t is not None]
+        if tenants and any(t != tenants[0] for t in tenants):
+            # Usar '__all__' para que Django Admin muestre el error general
+            errors['__all__'] = ['Paciente, terapeuta e historial deben pertenecer a la misma empresa (tenant).']
+
+        # Si ya tenemos un tenant objetivo (por patient/history/reflexo) y el terapeuta no coincide, marcar error en el campo
+        target_tid = p_tid or h_tid or self.reflexo_id
+        if target_tid is not None and therapist is not None and t_tid is not None and t_tid != target_tid:
+            errors['therapist'] = ['El terapeuta pertenece a una empresa (tenant) diferente a la del paciente/historial.']
+
+        # Asignar reflexo automáticamente si no viene y se puede inferir
+        if self.reflexo_id is None:
+            inferred = p_tid or h_tid or t_tid
+            if inferred is not None:
+                self.reflexo_id = inferred
+
+        # Evitar duplicados: una cita activa por par (patient, history)
+        if patient is not None and history is not None:
+            exists_dup = (
+                Appointment.objects.filter(
+                    patient_id=patient.id,
+                    history_id=history.id,
+                    deleted_at__isnull=True,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            )
+            if exists_dup:
+                errors['__all__'] = errors.get('__all__', []) + [
+                    'Ya existe una cita activa para este paciente con este historial. Cree/seleccione otro historial para evitar duplicados.'
+                ]
+
+        if errors:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        # Ejecutar validaciones antes de guardar (aplica para Admin y API)
+        self.full_clean()
+        super().save(*args, **kwargs)

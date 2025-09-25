@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from .models.payment_type import PaymentType
 from .models.document_type import DocumentType
 from .models.history import History
@@ -84,11 +85,35 @@ class DocumentTypeAdmin(BaseTenantAdmin):
     search_fields = ('name',)
     ordering = ('name',)
 
+class HistoryAdminForm(forms.ModelForm):
+    class Meta:
+        model = History
+        fields = '__all__'
+
+    def clean(self):
+        cleaned = super().clean()
+        required_errors = {}
+        # Campos obligatorios solicitados
+        if cleaned.get('height') in (None, ''):
+            required_errors['height'] = 'Requerido'
+        if cleaned.get('weight') in (None, ''):
+            required_errors['weight'] = 'Requerido'
+        if cleaned.get('last_weight') in (None, ''):
+            required_errors['last_weight'] = 'Requerido'
+        if cleaned.get('diu_type') in (None, ''):
+            required_errors['diu_type'] = 'Requerido'
+        if required_errors:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(required_errors)
+        return cleaned
+
 @admin.register(History)
 class HistoryAdmin(BaseTenantAdmin):
-    list_display = ('id', 'patient', 'testimony', 'height', 'weight', 'created_at')
+    # Ajuste dinámico de columnas y búsqueda según rol
+    list_display = ('local_id', 'patient', 'reflexo', 'testimony', 'height', 'weight', 'created_at')
     list_filter = ('testimony', 'created_at', 'deleted_at')
-    search_fields = ('patient__name', 'patient__document_number')
+    search_fields = ('local_id', 'patient__name', 'patient__document_number')
+    form = HistoryAdminForm
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -109,9 +134,31 @@ class HistoryAdmin(BaseTenantAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))
-        if not is_global_admin(request.user):
+        # No permitir editar el tenant para usuarios no-admin
+        if not is_global_admin(request.user) and 'reflexo' not in ro:
             ro.append('reflexo')
+        # No permitir editar el ID local (siempre autogenerado)
+        if 'local_id' not in ro:
+            ro.append('local_id')
         return tuple(ro)
+
+    def get_list_display(self, request):
+        base = list(self.list_display)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
+
+    def get_search_fields(self, request):
+        base = list(self.search_fields)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         # Siempre ocultar pacientes soft-deleted en el selector
@@ -132,15 +179,64 @@ class HistoryAdmin(BaseTenantAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def save_model(self, request, obj, form, change):
+        # Alinear reflexo con el paciente si es posible
+        patient_tid = getattr(getattr(obj, 'patient', None), 'reflexo_id', None)
+        if patient_tid and obj.reflexo_id and obj.reflexo_id != patient_tid:
+            # Forzar coincidencia para evitar inconsistencias
+            obj.reflexo_id = patient_tid
         if not is_global_admin(request.user):
-            obj.reflexo_id = get_tenant(request.user)
+            # Asegurar tenant del usuario
+            obj.reflexo_id = get_tenant(request.user) or patient_tid or obj.reflexo_id
+
+        # Asignar local_id secuencial si está vacío
+        if getattr(obj, 'local_id', None) in (None, 0):
+            from django.db import transaction
+            from django.db.models import Max
+            with transaction.atomic():
+                max_local = (
+                    History.objects.select_for_update()
+                    .filter(reflexo_id=obj.reflexo_id)
+                    .aggregate(m=Max('local_id'))['m']
+                )
+                obj.local_id = (max_local or 0) + 1
+
         super().save_model(request, obj, form, change)
 
 @admin.register(PredeterminedPrice)
 class PredeterminedPriceAdmin(BaseTenantAdmin):
-    list_display = ('id', 'name', 'price', 'created_at')
-    search_fields = ('name',)
-    ordering = ('name',)
+    list_display = ('local_id', 'name', 'price', 'created_at')
+    search_fields = ('local_id', 'name')
+    ordering = ('reflexo_id', 'local_id', 'name')
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if 'local_id' not in ro:
+            ro.append('local_id')
+        return tuple(ro)
+
+    def save_model(self, request, obj, form, change):
+        # Asegurar tenant para no-admins o cuando no se especifica
+        tenant_id = get_tenant(request.user)
+        if not is_global_admin(request.user):
+            if tenant_id is not None:
+                obj.reflexo_id = tenant_id
+        elif getattr(obj, 'reflexo_id', None) is None and tenant_id is not None:
+            obj.reflexo_id = tenant_id
+
+        # Asignar local_id secuencial por tenant si está vacío
+        if getattr(obj, 'local_id', None) in (None, 0):
+            from django.db import transaction
+            from django.db.models import Max
+            from .models.predetermined_price import PredeterminedPrice as PP
+            with transaction.atomic():
+                max_local = (
+                    PP.objects.select_for_update()
+                    .filter(reflexo_id=obj.reflexo_id)
+                    .aggregate(m=Max('local_id'))['m']
+                )
+                obj.local_id = (max_local or 0) + 1
+
+        super().save_model(request, obj, form, change)
 
 @admin.register(PaymentStatus)
 class PaymentStatusAdmin(BaseTenantAdmin):

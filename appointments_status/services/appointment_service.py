@@ -3,6 +3,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from ..models import Appointment, Ticket
+from patients_diagnoses.models import Patient
+from therapists.models import Therapist
 from ..serializers import AppointmentSerializer
 from decimal import Decimal
 from datetime import datetime
@@ -28,7 +30,8 @@ class AppointmentService:
         """
         try:
             # Validar datos requeridos mínimos del payload
-            required_fields = ['patient', 'therapist', 'appointment_date', 'hour']
+            # Ahora aceptamos patient_local_id / therapist_local_id / history_local_id con reflexo_id
+            required_fields = ['appointment_date', 'hour']
             for field in required_fields:
                 if field not in data:
                     return Response(
@@ -38,27 +41,114 @@ class AppointmentService:
 
             payload = dict(data)
 
+            # Resolver por local_id si viene junto con reflexo_id
+            tenant_from_payload = payload.get('reflexo_id') or payload.get('reflexo')
+            try:
+                tenant_from_payload = int(tenant_from_payload) if tenant_from_payload is not None else None
+            except (TypeError, ValueError):
+                return Response({'reflexo_id': 'Debe ser un ID entero'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # patient: permitir patient_local_id + reflexo_id
+            if 'patient' not in payload and 'patient_id' not in payload and 'patient_local_id' in payload:
+                if tenant_from_payload is None:
+                    return Response({'reflexo_id': 'Requerido cuando se usa patient_local_id'}, status=status.HTTP_400_BAD_REQUEST)
+                from patients_diagnoses.models import Patient as PatientModel
+                p = PatientModel.objects.filter(reflexo_id=tenant_from_payload, local_id=payload['patient_local_id'], deleted_at__isnull=True).first()
+                if not p:
+                    return Response({'patient_local_id': 'No se encontró paciente para ese reflexo/local_id'}, status=status.HTTP_404_NOT_FOUND)
+                payload['patient_id'] = p.id
+
+            # therapist: permitir therapist_local_id + reflexo_id
+            if 'therapist' not in payload and 'therapist_id' not in payload and 'therapist_local_id' in payload:
+                if tenant_from_payload is None:
+                    return Response({'reflexo_id': 'Requerido cuando se usa therapist_local_id'}, status=status.HTTP_400_BAD_REQUEST)
+                from therapists.models import Therapist as TherapistModel
+                t = TherapistModel.objects.filter(reflexo_id=tenant_from_payload, local_id=payload['therapist_local_id'], deleted_at__isnull=True).first()
+                if not t:
+                    return Response({'therapist_local_id': 'No se encontró terapeuta para ese reflexo/local_id'}, status=status.HTTP_404_NOT_FOUND)
+                payload['therapist_id'] = t.id
+
+            # history: permitir history_local_id + reflexo_id
+            if 'history' not in payload and 'history_id' not in payload and 'history_local_id' in payload:
+                if tenant_from_payload is None:
+                    return Response({'reflexo_id': 'Requerido cuando se usa history_local_id'}, status=status.HTTP_400_BAD_REQUEST)
+                from histories_configurations.models import History as HistoryModel
+                h = HistoryModel.active.filter(reflexo_id=tenant_from_payload, local_id=payload['history_local_id']).first()
+                if not h:
+                    return Response({'history_local_id': 'No se encontró historial para ese reflexo/local_id'}, status=status.HTTP_404_NOT_FOUND)
+                payload['history_id'] = h.id
+
             # Convertir patient/therapist IDs a claves *_id (evita instancias manuales)
+            if 'patient_id' not in payload:
+                try:
+                    payload['patient_id'] = int(payload.pop('patient'))
+                except (KeyError, ValueError, TypeError):
+                    return Response({'error': 'patient debe ser un ID entero'}, status=status.HTTP_400_BAD_REQUEST)
+            if 'therapist_id' not in payload:
+                try:
+                    therapist_val = payload.pop('therapist')
+                    payload['therapist_id'] = int(therapist_val) if therapist_val is not None else None
+                except (ValueError, TypeError):
+                    return Response({'error': 'therapist debe ser un ID entero o null'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validar existencia de Patient y Therapist, y consistencia de tenant
+            # Nota: Patient.objects por defecto excluye soft-deleted; Therapist no, por lo que filtramos deleted_at
             try:
-                payload['patient_id'] = int(payload.pop('patient'))
-            except (KeyError, ValueError, TypeError):
+                patient_id = int(payload.get('patient')) if 'patient' in payload else int(payload.get('patient_id'))
+            except (TypeError, ValueError):
                 return Response({'error': 'patient debe ser un ID entero'}, status=status.HTTP_400_BAD_REQUEST)
+
             try:
-                therapist_val = payload.pop('therapist')
-                payload['therapist_id'] = int(therapist_val) if therapist_val is not None else None
-            except (ValueError, TypeError):
-                return Response({'error': 'therapist debe ser un ID entero o null'}, status=status.HTTP_400_BAD_REQUEST)
+                patient_obj = Patient.objects.get(pk=patient_id)
+            except Patient.DoesNotExist:
+                return Response({'error': 'Paciente no encontrado o eliminado'}, status=status.HTTP_400_BAD_REQUEST)
+
+            therapist_id_val = payload.get('therapist') if 'therapist' in payload else payload.get('therapist_id')
+            therapist_obj = None
+            if therapist_id_val is not None:
+                try:
+                    therapist_id = int(therapist_id_val)
+                except (TypeError, ValueError):
+                    return Response({'error': 'therapist debe ser un ID entero o null'}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    therapist_obj = Therapist.objects.get(pk=therapist_id, deleted_at__isnull=True)
+                except Therapist.DoesNotExist:
+                    return Response({'error': 'Terapeuta no encontrado o eliminado'}, status=status.HTTP_400_BAD_REQUEST)
+
+            patient_tenant = getattr(patient_obj, 'reflexo_id', None)
+            therapist_tenant = getattr(therapist_obj, 'reflexo_id', None) if therapist_obj else None
 
             # Asegurar History: usar el provisto o crear/buscar uno para el paciente
-            if 'history' in payload and payload['history']:
-                # Si viene history directo, solo convertir a *_id si es int
+            history_tenant = None
+            if 'history_id' in payload:
+                provided_history_id = int(payload['history_id'])
                 try:
-                    payload['history_id'] = int(payload.pop('history'))
+                    history = History.active.get(pk=provided_history_id)
+                except History.DoesNotExist:
+                    return Response({'error': 'Historial no encontrado o eliminado'}, status=status.HTTP_404_NOT_FOUND)
+                if history.patient_id != payload['patient_id']:
+                    return Response({'non_field_errors': ['El historial no pertenece al paciente proporcionado.']}, status=status.HTTP_400_BAD_REQUEST)
+                history_tenant = getattr(history, 'reflexo_id', None)
+                payload['history_id'] = history.id
+            elif 'history' in payload and payload['history']:
+                # Si viene history directo, validar que exista, que no esté soft-deleted, y que pertenezca al mismo paciente
+                try:
+                    provided_history_id = int(payload.pop('history'))
                 except (ValueError, TypeError):
                     return Response({'error': 'history debe ser un ID entero'}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    history = History.active.get(pk=provided_history_id)
+                except History.DoesNotExist:
+                    return Response({'error': 'Historial no encontrado o eliminado'}, status=status.HTTP_404_NOT_FOUND)
+
+                if history.patient_id != payload['patient_id']:
+                    return Response({'non_field_errors': ['El historial no pertenece al paciente proporcionado.']}, status=status.HTTP_400_BAD_REQUEST)
+
+                history_tenant = getattr(history, 'reflexo_id', None)
+                payload['history_id'] = history.id
             else:
                 # Buscar historial activo más reciente del paciente (por tenant si viene)
-                tenant_id = payload.get('reflexo') or payload.get('reflexo_id')
+                tenant_id = payload.get('reflexo_id') or payload.get('reflexo') or patient_tenant
                 qs = History.active.filter(patient_id=payload['patient_id'])
                 if tenant_id:
                     qs = qs.filter(reflexo_id=tenant_id)
@@ -70,6 +160,39 @@ class AppointmentService:
                         reflexo_id=tenant_id
                     )
                 payload['history_id'] = history.id
+                history_tenant = getattr(history, 'reflexo_id', None)
+
+            # Determinar tenant solicitado (si admin lo envía)
+            requested_tenant = payload.get('reflexo_id') or payload.get('reflexo') or tenant_from_payload
+            if requested_tenant is not None:
+                try:
+                    requested_tenant = int(requested_tenant)
+                except (TypeError, ValueError):
+                    return Response({'reflexo_id': ['Debe ser un ID entero']}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Reglas de consistencia de tenants
+            if therapist_obj and (patient_tenant != therapist_tenant):
+                return Response({
+                    'non_field_errors': ['Paciente y terapeuta pertenecen a diferentes empresas (tenant).']
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if requested_tenant is not None:
+                if patient_tenant is not None and requested_tenant != patient_tenant:
+                    return Response({'reflexo_id': ['No coincide con el tenant del paciente y/o terapeuta.']}, status=status.HTTP_400_BAD_REQUEST)
+                if therapist_tenant is not None and requested_tenant != therapist_tenant:
+                    return Response({'reflexo_id': ['No coincide con el tenant del paciente y/o terapeuta.']}, status=status.HTTP_400_BAD_REQUEST)
+                if history_tenant is not None and requested_tenant != history_tenant:
+                    return Response({'reflexo_id': ['No coincide con el tenant del historial.']}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validación de consistencia final (paciente, terapeuta e historial deben coincidir)
+            tenants = [t for t in [patient_tenant, therapist_tenant, history_tenant, requested_tenant] if t is not None]
+            if tenants and any(t != tenants[0] for t in tenants):
+                return Response({'non_field_errors': ['Paciente, terapeuta, historial y/o tenant solicitado pertenecen a diferentes empresas (tenant).']}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Establecer tenant de la cita: prioridad al solicitado; si no, inferir de history/patient/therapist (ya consistentes)
+            tenant_id = requested_tenant or history_tenant or patient_tenant or therapist_tenant
+            payload['reflexo_id'] = tenant_id
+            payload.pop('reflexo', None)
 
             # Normalizar appointment_date + hour a datetime válido si vienen como strings
             appt_date = payload.get('appointment_date')
@@ -97,7 +220,19 @@ class AppointmentService:
             except ValueError:
                 return Response({'error': 'Formato inválido de appointment_date u hour. Use YYYY-MM-DD y HH:MM.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Crear la cita
+            # Crear la cita con local_id secuencial por tenant
+            from django.db.models import Max
+            # Nota: estamos dentro de @transaction.atomic
+            next_local = None
+            if payload.get('reflexo_id'):
+                max_local = (
+                    Appointment.objects.select_for_update()
+                    .filter(reflexo_id=payload['reflexo_id'])
+                    .aggregate(m=Max('local_id'))['m']
+                )
+                next_local = (max_local or 0) + 1
+                payload['local_id'] = next_local
+
             appointment = Appointment.objects.create(**payload)
             
             # El ticket se crea automáticamente mediante el signal
@@ -293,12 +428,15 @@ class AppointmentService:
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Construir rango de día completo
-            start_dt = datetime.combine(sd, time.min)
-            end_dt = datetime.combine(ed, time.max)
-
+            # Construir filtros por rango. Coincidimos si:
+            # - La fecha (parte date) de appointment_date cae dentro [sd, ed], o
+            # - El rango [initial_date, final_date] se solapa con [sd, ed].
+            from django.db.models import Q
             queryset = Appointment.objects.filter(
-                appointment_date__range=[start_dt, end_dt],
+                Q(appointment_date__date__range=(sd, ed)) |
+                Q(initial_date__isnull=False, final_date__isnull=False, initial_date__lte=ed, final_date__gte=sd) |
+                Q(initial_date__isnull=False, final_date__isnull=True, initial_date__range=(sd, ed)) |
+                Q(initial_date__isnull=True, final_date__isnull=False, final_date__range=(sd, ed)),
                 deleted_at__isnull=True
             )
             if tenant_id:
@@ -336,9 +474,9 @@ class AppointmentService:
             Response: Respuesta con las citas completadas
         """
         try:
-            today = timezone.now().date()
+            # Solo citas con estado COMPLETADO
             queryset = Appointment.objects.filter(
-                appointment_date__lt=today,
+                appointment_status__iexact='COMPLETADO',
                 deleted_at__isnull=True
             )
             if tenant_id:
@@ -346,12 +484,13 @@ class AppointmentService:
             
             # Aplicar filtros adicionales
             if filters:
-                if 'appointment_status' in filters:
-                    queryset = queryset.filter(appointment_status=filters['appointment_status'])
+                # Ignorar appointment_status para no sobreescribir COMPLETADO, pero aceptar otros filtros
                 if 'patient' in filters:
                     queryset = queryset.filter(patient=filters['patient'])
                 if 'therapist' in filters:
                     queryset = queryset.filter(therapist=filters['therapist'])
+                if 'appointment_date' in filters:
+                    queryset = queryset.filter(appointment_date=filters['appointment_date'])
             
             serializer = AppointmentSerializer(queryset, many=True)
             return Response({
@@ -376,9 +515,9 @@ class AppointmentService:
             Response: Respuesta con las citas pendientes
         """
         try:
-            today = timezone.now().date()
+            # Solo citas con estado PENDIENTE
             queryset = Appointment.objects.filter(
-                appointment_date__gte=today,
+                appointment_status__iexact='PENDIENTE',
                 deleted_at__isnull=True
             )
             if tenant_id:
@@ -386,12 +525,13 @@ class AppointmentService:
             
             # Aplicar filtros adicionales
             if filters:
-                if 'appointment_status' in filters:
-                    queryset = queryset.filter(appointment_status=filters['appointment_status'])
+                # Ignorar appointment_status para no sobreescribir PENDIENTE, pero aceptar otros filtros
                 if 'patient' in filters:
                     queryset = queryset.filter(patient=filters['patient'])
                 if 'therapist' in filters:
                     queryset = queryset.filter(therapist=filters['therapist'])
+                if 'appointment_date' in filters:
+                    queryset = queryset.filter(appointment_date=filters['appointment_date'])
             
             serializer = AppointmentSerializer(queryset, many=True)
             return Response({
@@ -423,23 +563,35 @@ class AppointmentService:
             start_datetime = datetime.combine(date, hour)
             end_datetime = start_datetime + timedelta(minutes=duration)
             
-            # Buscar citas que se solapen
+            # Buscar citas que se solapen (misma fecha y hora dentro del intervalo [start, end))
             conflicting_appointments = Appointment.objects.filter(
-                appointment_date=date,
+                appointment_date__date=date,
                 deleted_at__isnull=True
-            ).exclude(
-                hour__gte=end_datetime.time()
-            ).exclude(
-                hour__lte=start_datetime.time()
+            ).filter(
+                hour__gte=start_datetime.time(),
+                hour__lt=end_datetime.time()
             )
             if tenant_id:
                 conflicting_appointments = conflicting_appointments.filter(reflexo_id=tenant_id)
             
             is_available = not conflicting_appointments.exists()
             
+            # Armar lista de conflictos (pequeño resumen)
+            conflicts = []
+            if not is_available:
+                for appt in conflicting_appointments.select_related('patient', 'therapist'):
+                    conflicts.append({
+                        'id': appt.id,
+                        'patient_name': getattr(appt.patient, 'get_full_name', lambda: None)(),
+                        'therapist_name': getattr(appt.therapist, 'get_full_name', lambda: None)() if appt.therapist_id else None,
+                        'appointment_date': appt.appointment_date.isoformat() if appt.appointment_date else None,
+                        'hour': appt.hour.strftime('%H:%M') if appt.hour else None,
+                    })
+
             return Response({
                 'is_available': is_available,
-                'conflicting_appointments': conflicting_appointments.count() if not is_available else 0
+                'conflicting_appointments': conflicting_appointments.count(),
+                'conflicts': conflicts
             }, status=status.HTTP_200_OK)
             
         except Exception as e:

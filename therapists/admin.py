@@ -4,9 +4,13 @@ from architect.utils.tenant import is_global_admin, get_tenant, filter_by_tenant
 
 @admin.register(Therapist)
 class TherapistAdmin(admin.ModelAdmin):
-    list_display = ("id", "first_name", "last_name_paternal", "document_number", "region", "province", "district", "deleted_at")
-    list_filter = ("region", "province", "district", "created_at", "deleted_at")
-    search_fields = ("first_name", "last_name_paternal", "last_name_maternal", "document_number")
+    # Ajuste dinámico de columnas y búsqueda según rol
+    list_display = (
+        'local_id', 'first_name', 'last_name_paternal', 'document_number',
+        'region', 'province', 'district', 'deleted_at'
+    )
+    search_fields = ('local_id', 'first_name', 'last_name_paternal', 'last_name_maternal', 'document_number', 'email')
+    list_filter = ('deleted_at', 'region', 'province', 'district')
     readonly_fields = ("created_at", "updated_at", "deleted_at")
 
     def get_queryset(self, request):
@@ -16,6 +20,24 @@ class TherapistAdmin(admin.ModelAdmin):
         if is_global_admin(request.user):
             return qs
         return filter_by_tenant(qs, request.user, field='reflexo')
+
+    def get_list_display(self, request):
+        base = list(self.list_display)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
+
+    def get_search_fields(self, request):
+        base = list(self.search_fields)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
 
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))

@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from .models.appointment import Appointment
 from .models.appointment_status import AppointmentStatus
 from .models.ticket import Ticket
@@ -97,17 +98,54 @@ class TicketInline(admin.StackedInline):
 
 @admin.register(Appointment)
 class AppointmentAdmin(BaseTenantAdmin):
+    class AppointmentAdminForm(forms.ModelForm):
+        class Meta:
+            model = Appointment
+            fields = '__all__'
+
+        def clean(self):
+            cleaned = super().clean()
+            appt_dt = cleaned.get('appointment_date')
+            hour = cleaned.get('hour')
+            # Si viene appointment_date con hora incluida y sin hour, derivarlo
+            if appt_dt is not None and hour is None and hasattr(appt_dt, 'time'):
+                cleaned['hour'] = appt_dt.time()
+            # Requerir siempre los 4 campos (crear y actualizar)
+            required_errors = {}
+            if cleaned.get('appointment_date') is None:
+                required_errors['appointment_date'] = 'Requerido'
+            if cleaned.get('hour') is None:
+                required_errors['hour'] = 'Requerido'
+            if cleaned.get('initial_date') is None:
+                required_errors['initial_date'] = 'Requerido'
+            if cleaned.get('final_date') is None:
+                required_errors['final_date'] = 'Requerido'
+            # Pago obligatorio
+            if cleaned.get('payment') in (None, ''):
+                required_errors['payment'] = 'Requerido'
+            # Habitación/Consultorio obligatorio
+            if cleaned.get('room') in (None, ''):
+                required_errors['room'] = 'Requerido'
+            # Estado de pago obligatorio
+            if cleaned.get('payment_status') is None:
+                required_errors['payment_status'] = 'Requerido'
+            if required_errors:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(required_errors)
+            return cleaned
+
+    form = AppointmentAdminForm
     list_display = [
-        'id', 'appointment_date', 'hour', 'appointment_status',
+        'local_id', 'appointment_date', 'hour', 'appointment_status',
         'room', 'is_completed', 'deleted_at'
     ]
     list_filter = [
         'appointment_date', 'appointment_status', 'room',
         'created_at', 'deleted_at'
     ]
-    search_fields = ['ailments', 'diagnosis', 'observation', 'ticket_number']
+    search_fields = ['local_id', 'ailments', 'diagnosis', 'observation', 'ticket_number']
     readonly_fields = ['is_completed', 'is_pending', 'created_at', 'updated_at', 'deleted_at']
-    ordering = ['-appointment_date', '-hour']
+    ordering = ['reflexo_id', 'local_id', '-appointment_date', '-hour']
 
     # 👇 según prefieras
     raw_id_fields = ['patient', 'therapist', 'history']
@@ -143,6 +181,31 @@ class AppointmentAdmin(BaseTenantAdmin):
               .select_related('patient', 'therapist', 'history', 'payment_status'))
         return filter_by_tenant(qs, request.user, field='reflexo')
 
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if 'local_id' not in ro:
+            ro.append('local_id')
+        return tuple(ro)
+
+    def get_list_display(self, request):
+        base = list(self.list_display)
+        # Para admin global, mostrar también el id global
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
+
+    def get_search_fields(self, request):
+        base = list(self.search_fields)
+        if is_global_admin(request.user):
+            if 'id' not in base:
+                base.insert(1, 'id')
+        else:
+            base = [f for f in base if f != 'id']
+        return tuple(base)
+
     # readonly_fields manejados en BaseTenantAdmin
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
@@ -165,6 +228,27 @@ class AppointmentAdmin(BaseTenantAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     # Guardado asigna tenant en BaseTenantAdmin
+    def save_model(self, request, obj, form, change):
+        # Alinear tenant con patient/history si es posible
+        patient_tid = getattr(getattr(obj, 'patient', None), 'reflexo_id', None)
+        history_tid = getattr(getattr(obj, 'history', None), 'reflexo_id', None)
+        target_tid = patient_tid or history_tid or obj.reflexo_id
+        if target_tid:
+            obj.reflexo_id = target_tid
+
+        # Asignar local_id secuencial si está vacío
+        if getattr(obj, 'local_id', None) in (None, 0):
+            from django.db import transaction
+            from django.db.models import Max
+            with transaction.atomic():
+                max_local = (
+                    Appointment.objects.select_for_update()
+                    .filter(reflexo_id=obj.reflexo_id)
+                    .aggregate(m=Max('local_id'))['m']
+                )
+                obj.local_id = (max_local or 0) + 1
+
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Ticket)

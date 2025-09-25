@@ -50,6 +50,20 @@ Base: http://localhost:8000/api/architect/
     ```
 - users
   - GET http://localhost:8000/api/architect/users/
+  - DELETE http://localhost:8000/api/architect/users/{id}/delete/
+    
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Body (JSON):
+    ```json
+    {}
+    ```
+    
+    Notas:
+    - Requiere permisos de administrador (`is_staff`) o superusuario (`is_superuser`).
+    - Un administrador que NO sea superusuario no puede eliminar a un superusuario.
+    - Elimina DEFINITIVAMENTE al usuario (hard delete): no queda rastro en la base de datos ni en Django Admin.
   - POST http://localhost:8000/api/architect/users/
     
     Body (JSON):
@@ -77,6 +91,23 @@ Base: http://localhost:8000/api/profiles/
 - users (current user)
   - GET http://localhost:8000/api/profiles/users/me/
   - PUT/PATCH http://localhost:8000/api/profiles/users/me/update/
+    
+    Ejemplo (PUT – actualizar campos básicos):
+    ```json
+    {
+      "name": "Fabrizio",
+      "paternal_lastname": "Alvarez",
+      "maternal_lastname": "Ponce",
+      "phone": "999888777"
+    }
+    ```
+    
+    Ejemplo (PATCH – actualización parcial: solo teléfono):
+    ```json
+    {
+      "phone": "987654321"
+    }
+    ```
   - POST http://localhost:8000/api/profiles/users/me/photo/
     
     Opción A (JSON):
@@ -90,9 +121,57 @@ Base: http://localhost:8000/api/profiles/
     Body (form-data):
     - Key: `photo_file` | Type: File | Value: seleccionar imagen
   - DELETE http://localhost:8000/api/profiles/users/me/photo/
+    
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Body (JSON):
+    ```json
+    {}
+    ```
+    
+    Notas:
+    - Elimina DEFINITIVAMENTE la foto del usuario autenticado: borra el archivo del storage y limpia la referencia en la base de datos (no queda rastro en Admin ni en la DB).
+    - No requiere parámetros de query ni body; solo el header Authorization.
+    - Funciona igual si estás autenticado como usuario de Reflexo A, Reflexo B o Admin global: siempre actúa sobre “tu” usuario (el dueño del token).
+    
+    Ejemplo (curl):
+    ```bash
+    curl -X DELETE \
+      -H "Authorization: Bearer <TU_TOKEN>" \
+      http://localhost:8000/api/profiles/users/me/photo/
+    ```
+  - DELETE http://localhost:8000/api/profiles/users/me/delete/
+    
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Body (JSON):
+    ```json
+    {}
+    ```
+    
+    Notas:
+    - Por defecto realiza un "soft delete" del usuario autenticado (queda registro en DB, deja de mostrarse en Admin si aplica).
+    - Para eliminar DEFINITIVAMENTE el usuario (sin dejar rastro en DB ni en el Admin), agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/profiles/users/me/delete/?hard=true`
+    - Restricción: no se permite eliminar un superusuario.
+    - Este endpoint NO interfiere con `users/me/photo/` porque son rutas distintas: `users/me/delete/` es para la cuenta; `users/me/photo/` solo gestiona la foto de perfil.
   - GET http://localhost:8000/api/profiles/users/search/?q=test&page=1
     (Parámetros: q=texto_búsqueda, page=número_página)
   - GET http://localhost:8000/api/profiles/users/profile/
+
+  - Eliminar usuario desde Django Admin (GUI)
+    
+    Pasos:
+    - Ingresa al panel: http://localhost:8000/admin/
+    - Navega a: Users Profiles → Users
+    - Busca y selecciona el usuario
+    - Acciones → Delete seleccionado (o botón Delete en el detalle)
+    
+    Notas:
+    - Esta operación elimina definitivamente (hard delete) el usuario de la base de datos y del panel de Admin.
+    - Usa esta opción cuando necesitas borrar a cualquier usuario (no solo al autenticado) mediante interfaz administrativa.
 
 - profiles
   - GET http://localhost:8000/api/profiles/profiles/me/
@@ -257,24 +336,30 @@ Base: http://localhost:8000/api/patients/
       "code": "DX001"
     }
     ```
-    Notas (multitenant):
-    - Los diagnósticos pertenecen a una empresa (tenant) mediante `reflexo_id`.
-    - Usuarios de empresa (no admin):
-      - No necesitan enviar `reflexo_id`; se asigna automáticamente desde el token y solo pueden crear/visualizar diagnósticos de su empresa.
-    - Administrador global:
-      - Puede enviar `reflexo_id` explícito para crear el diagnóstico en un tenant específico (A o B) y puede ver TODOS los diagnósticos.
-      - Si no envía `reflexo_id`, se puede inferir desde el contexto según configuración, pero se recomienda enviarlo para evitar ambigüedad.
-    - Unicidad por empresa: la combinación `(reflexo_id, code)` debe ser única. Puedes repetir un `code` en distintas empresas, pero no dentro de la misma.
-    - Ejemplo (admin creando en Reflexo B id=2):
-      ```json
-      {
-        "name": "Lumbalgia",
-        "code": "DX001",
-        "reflexo_id": 2
-      }
-      ```
+    Notas (catálogo global):
+    - Los diagnósticos son GLOBALES (no-tenant). No se usa `reflexo_id`.
+    - Unicidad global por `code`.
+    - Paginación disponible en el listado con `page` y `page_size`.
+    - Búsqueda por `search` en el listado, o usar el endpoint `/diagnoses/search/`.
   - GET http://localhost:8000/api/patients/diagnoses/{id}/
   - PUT http://localhost:8000/api/patients/diagnoses/{id}/
+    
+    Body (JSON) – actualización completa (envía ambos campos si los vas a modificar):
+    ```json
+    {
+      "name": "Lumbalgia crónica",
+      "code": "DX001"
+    }
+    ```
+  - PATCH http://localhost:8000/api/patients/diagnoses/{id}/
+    
+    Body (JSON) – actualización parcial (ejemplos):
+    ```json
+    { "name": "Lumbalgia aguda" }
+    ```
+    ```json
+    { "code": "DX001A" }
+    ```
   - DELETE http://localhost:8000/api/patients/diagnoses/{id}/
     
     Notas sobre eliminación (global por código):
@@ -285,14 +370,114 @@ Base: http://localhost:8000/api/patients/
   - GET http://localhost:8000/api/patients/diagnoses/search/?q={text}
     
     Nota:
-    - El parámetro `q` puede ser cualquier texto (o número) para buscar por nombre o código de diagnóstico. La búsqueda es parcial (substring) y usualmente sin distinguir mayúsculas/minúsculas.
-    - Ejemplos válidos: `q=lumba`, `q=DX0`, `q=1`.
-    - Si `q=1` te devuelve 2 diagnósticos es normal: probablemente ambos contienen el dígito "1" en su código o nombre.
-    - Si no hay coincidencias, la API responde 200 con una lista vacía (esto es esperado; no es error).
-    - Paginación y otros filtros siguen las convenciones de DRF si están habilitados.
+    - Parámetros: `q` (obligatorio), `page` (por defecto 1), `page_size` (por defecto 10).
+    - La búsqueda es parcial (substring) en `code` y `name` y no distingue mayúsculas/minúsculas.
+    - Si no hay coincidencias, responde 200 con `results: []`.
 
 - patients
   - GET http://localhost:8000/api/patients/patients/?page={n}
+  - POST http://localhost:8000/api/patients/patients/
+    
+    Body (JSON) (usuario con tenant; no enviar reflexo_id):
+    ```json
+    {
+      "document_number": "12815999",
+      "paternal_lastname": "Sebas",
+      "maternal_lastname": "Gonzales",
+      "name": "Gonchalez",
+      "email": "gonchalez.backend@example.com",
+      "ocupation": "Prosor",
+      "health_condition": "Sin antecedentes judiciales",
+      "document_type_id": 1,
+      "region_code": 1,
+      "province_code": 101,
+      "district_code": 10101,
+      "sex": "M",
+      "phone1": "999798999",
+      "address": "Av. Siempre Viva 123456"
+    }
+    ```
+    Ejemplo (usuario logueado en Reflexo A):
+    ```json
+    {
+      "document_number": "12815999",
+      "paternal_lastname": "Sebas",
+      "maternal_lastname": "Gonzales",
+      "name": "Gonchalez",
+      "email": "gonchalez.backend@example.com",
+      "ocupation": "Prosor",
+      "health_condition": "Sin antecedentes judiciales",
+      "document_type_id": 1,
+      "region_code": 1,
+      "province_code": 101,
+      "district_code": 10101,
+      "sex": "M",
+      "phone1": "999798999",
+      "address": "Av. Siempre Viva 123456"
+    }
+    ```
+    Ejemplo (usuario logueado en Reflexo B):
+    ```json
+    {
+      "document_number": "12816000",
+      "paternal_lastname": "Perez",
+      "maternal_lastname": "Luna",
+      "name": "Marcos",
+      "email": "marcos@example.com",
+      "ocupation": "Analista",
+      "health_condition": "Sin alergias",
+      "document_type_id": 1,
+      "region_code": 1,
+      "province_code": 101,
+      "district_code": 10101,
+      "sex": "M",
+      "phone1": "999111222",
+      "address": "Calle Real 456"
+    }
+    ```
+    Body (JSON) (admin creando en Reflexo A):
+    ```json
+    {
+      "document_number": "12815999",
+      "paternal_lastname": "Sebas",
+      "maternal_lastname": "Gonzales",
+      "name": "Gonchalez",
+      "email": "gonchalez.backend@example.com",
+      "ocupation": "Prosor",
+      "health_condition": "Sin antecedentes judiciales",
+      "document_type_id": 1,
+      "region_code": 1,
+      "province_code": 101,
+      "district_code": 10101,
+      "sex": "M",
+      "phone1": "999798999",
+      "address": "Av. Siempre Viva 123456",
+      "reflexo_id": 1
+    }
+    ```
+    Body (JSON) (admin creando en Reflexo B):
+    ```json
+    {
+      "document_number": "12816000",
+      "paternal_lastname": "Perez",
+      "maternal_lastname": "Luna",
+      "name": "Marcos",
+      "email": "marcos@example.com",
+      "ocupation": "Analista",
+      "health_condition": "Sin alergias",
+      "document_type_id": 1,
+      "region_code": 1,
+      "province_code": 101,
+      "district_code": 10101,
+      "sex": "M",
+      "phone1": "999111222",
+      "address": "Calle Real 456",
+      "reflexo_id": 2
+    }
+    ```
+    Notas (multitenant):
+    - Usuario con tenant: el backend asigna automáticamente su `reflexo_id` (no envíes `reflexo_id`).
+    - Administrador global: puede especificar `reflexo_id` para crear en Reflexo A (1) o Reflexo B (2), etc.
     
     Nota: `page={n}` indica el número de página a retornar. Comienza en 1. Si omites `page`, devuelve la primera página por defecto.
   - POST http://localhost:8000/api/patients/patients/
@@ -494,6 +679,19 @@ Pruebas en Postman (login)
     }
     ```
 
+  - POST http://localhost:8000/api/architect/auth/logout/
+    
+    Body (JSON):
+    ```json
+    {}
+    ```
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Notas:
+    - Revoca el token actual registrando su JTI en la lista de bloqueo.
+    - A partir de este llamado, cualquier request con ese mismo token responderá como inválido.
+
 ---
 
 ## Therapists Module
@@ -598,6 +796,49 @@ Router resource: `therapists`
     - Para eliminar definitivamente (hard delete) de forma GLOBAL y que no quede registro en la base de datos ni en el Admin, agrega `?hard=true`:
       - DELETE `http://localhost:8000/api/therapists/therapists/{id}/?hard=true`
 
+- photo (gestión de foto de terapeuta)
+  - POST http://localhost:8000/api/therapists/therapists/{id}/photo/
+    
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Opción A (multipart/form-data):
+    - Key: `photo_file` | Type: File | Value: seleccionar imagen
+
+    Opción B (JSON):
+    Body (JSON):
+    ```json
+    {
+      "photo_url": "/media/therapists/photos/example.jpg"
+    }
+    ```
+
+    Notas:
+    - Guarda la ruta relativa en el campo `profile_picture`.
+    - Multitenant: usuario de empresa (no admin) solo puede modificar terapeutas de su propia empresa. El admin global puede modificar cualquiera.
+
+  - DELETE http://localhost:8000/api/therapists/therapists/{id}/photo/
+    
+    Headers:
+    - Authorization: Bearer <token>
+    
+    Body (JSON):
+    ```json
+    {}
+    ```
+    
+    Notas:
+    - Borra el archivo físico del storage si existe y limpia `profile_picture` en la base de datos (hard delete de la foto).
+    - Multitenant: mismas reglas que el POST.
+
+    Ejemplo (curl):
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <TU_TOKEN>" \
+      -F "photo_file=@/ruta/local/foto.jpg" \
+      http://localhost:8000/api/therapists/therapists/5/photo/
+    ```
+
 - custom actions
   - GET http://localhost:8000/api/therapists/therapists/inactive/
   - POST or PATCH http://localhost:8000/api/therapists/therapists/{id}/restore/
@@ -615,10 +856,14 @@ Base: http://localhost:8000/api/appointments/
 Router resources: `appointments`, `appointment-statuses`, `tickets`
 
 - appointments
-  - GET http://localhost:8000/api/appointments/appointments/ (filters: see view; supports search, ordering, pagination)
+  - GET http://localhost:8000/api/appointments/appointments/
+    - Lista tus citas activas del tenant del usuario autenticado (multitenant). El admin global ve TODAS las citas.
+    - Soporta filtros, búsqueda, ordenamiento y paginación según la vista (`filterset_fields`, `search_fields`, `ordering_fields`).
+    - Filtros útiles: `appointment_date`, `appointment_status`, `patient`, `therapist`.
+
   - POST http://localhost:8000/api/appointments/appointments/
     
-    Body (JSON):
+    Body (JSON) mínimo:
     ```json
     {
       "patient": 1,
@@ -627,15 +872,125 @@ Router resources: `appointments`, `appointment-statuses`, `tickets`
       "hour": "10:00"
     }
     ```
+    
+    Notas (multitenant y coherencia):
+    - La cita pertenece a una empresa (tenant) en `reflexo_id`.
+    - Reglas de consistencia obligatorias:
+      - `patient`, `therapist` y `history` (si lo envías) deben pertenecer al MISMO tenant.
+      - El `history` debe pertenecer al `patient` (no se permite usar el historial de otra persona).
+    - Si NO envías `history`, el backend buscará el historial activo más reciente del paciente en el mismo tenant. Si no existe, creará uno mínimo y lo asociará.
+    - El `reflexo_id` de la cita se asigna automáticamente con prioridad: `reflexo_id` enviado por admin → tenant del `history` → tenant del `patient` → tenant del `therapist`.
+    - Si envías `reflexo_id` (solo admin), debe coincidir con el tenant del `patient`/`therapist` y, si lo envías, con el del `history`.
+    - Si hay cualquier inconsistencia de tenants, responde 400 con mensaje explicativo.
+
+    Ejemplo con history (opcional):
+    ```json
+    {
+      "patient": 1,
+      "therapist": 1,
+      "history": 13,
+      "appointment_date": "2025-01-20",
+      "hour": "10:00"
+    }
+    ```
+
+    Ejemplo (admin forzando tenant B id=2):
+    ```json
+    {
+      "patient": 11,
+      "therapist": 8,
+      "appointment_date": "2025-01-20",
+      "hour": "10:00",
+      "reflexo_id": 2
+    }
+    ```
+    - El `reflexo_id` debe coincidir con los tenants del `patient`/`therapist` (y del `history` si se envía). Si no coincide, 400.
+
+    Ejemplos por contexto de autenticación
+    - Admin global (puede ver/crear en cualquier tenant):
+      ```json
+      {
+        "patient": 11,            
+        "therapist": 8,          
+        "history": 13,           
+        "appointment_date": "2025-01-20",
+        "hour": "10:00",
+        "reflexo_id": 1          
+      }
+      ```
+      Nota: `reflexo_id` DEBE coincidir con el tenant de patient/therapist/history.
+
+    - Logueado como usuario de Reflexo A (no admin):
+      ```json
+      {
+        "patient": 3,            
+        "therapist": 2,
+        "history": 13,
+        "appointment_date": "2025-01-20",
+        "hour": "10:00"
+      }
+      ```
+      No envíes `reflexo_id`; el backend asigna automáticamente el tenant A si todos los IDs pertenecen a A.
+
+    - Logueado como usuario de Reflexo B (no admin):
+      ```json
+      {
+        "patient": 21,           
+        "therapist": 15,         
+        "history": 40,           
+        "appointment_date": "2025-01-22",
+        "hour": "09:30"
+      }
+      ```
+      No envíes `reflexo_id`; el backend asigna automáticamente el tenant B si todos los IDs pertenecen a B. Si hay mezcla A/B, la API responderá 400 con el detalle.
+  
     Notas:
     - `patient` y `therapist` deben ser IDs que existan previamente (FK válidas).
     - `history` es opcional; si no lo envías, el sistema buscará uno activo del paciente y, si no existe, creará uno mínimo automáticamente.
     - Formatos admitidos:
       - `appointment_date`: `YYYY-MM-DD` (o ISO con fecha/hora)
       - `hour`: `HH:MM`
+    
+    Notas (multitenant):
+    - Las citas pertenecen a una empresa (tenant) mediante `reflexo_id`.
+    - Usuario de empresa (no admin):
+      - No necesita enviar `reflexo_id`; se asigna automáticamente desde su token.
+      - Solo puede crear y ver citas de su propia empresa.
+    - Administrador global:
+      - Puede enviar `reflexo_id` explícito para crear la cita en una empresa específica (por ejemplo, Reflexo A o Reflexo B). De esta manera, si crea en Reflexo A solo la verá Reflexo A; si crea en Reflexo B solo la verá Reflexo B; el admin ve todo.
+      - Si no envía `reflexo_id`, el backend intentará inferirlo a partir del `patient`/`therapist` cuando sea consistente.
+    - Consistencia de tenant (validación estricta):
+      - El `patient` y el `therapist` deben pertenecer al MISMO tenant (misma empresa) entre sí.
+      - Si envías `reflexo_id`, este DEBE coincidir con el tenant del `patient` y del `therapist`.
+      - Si NO envías `reflexo_id`, el backend intentará inferirlo desde el `patient` (o desde el `therapist` cuando aplique), pero igualmente validará que ambos pertenezcan al mismo tenant.
+      - Si hay cruce de tenants (por ejemplo, `patient` de Reflexo A y `therapist` de Reflexo B), la API responde 400.
+      
+      Ejemplos de error (400 Bad Request):
+      ```json
+      { "non_field_errors": ["Paciente y terapeuta pertenecen a diferentes empresas (tenant)."] }
+      ```
+      ```json
+      { "reflexo_id": ["No coincide con el tenant del paciente y/o terapeuta."] }
+      ```
+
+    Ejemplo (admin creando en Reflexo B `id = 2`):
+    ```json
+    {
+      "patient": 1,
+      "therapist": 1,
+      "appointment_date": "2025-01-20",
+      "hour": "10:00",
+      "reflexo_id": 2
+    }
+    ```
   - GET http://localhost:8000/api/appointments/appointments/{id}/
   - PUT/PATCH http://localhost:8000/api/appointments/appointments/{id}/
   - DELETE http://localhost:8000/api/appointments/appointments/{id}/
+    
+    Notas sobre eliminación (global):
+    - Por defecto realiza soft delete (marca `deleted_at`). La cita deja de aparecer GLOBALMENTE en la API y en el panel de Django Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente (hard delete) de forma GLOBAL y que no quede registro ni en el Admin ni en la base de datos, agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/appointments/appointments/{id}/?hard=true`
   - Custom actions:
     - GET http://localhost:8000/api/appointments/appointments/completed/
     - GET http://localhost:8000/api/appointments/appointments/pending/
@@ -668,6 +1023,18 @@ Router resources: `appointments`, `appointment-statuses`, `tickets`
       "description": "Estado confirmado"
     }
     ```
+    Notas (multitenant):
+    - Usuario de empresa (no admin): no envía `reflexo_id`; el backend asigna el tenant desde su token y la unicidad de `name` se valida dentro de su empresa.
+    - Administrador global: puede crear el estado en una empresa específica enviando `reflexo_id`.
+    
+    Ejemplo (admin creando en Reflexo B id=2):
+    ```json
+    {
+      "name": "CONFIRMADO",
+      "description": "Estado confirmado",
+      "reflexo_id": 2
+    }
+    ```
   - PUT/PATCH http://localhost:8000/api/appointments/appointment-statuses/{id}/
     
     Notas:
@@ -682,8 +1049,12 @@ Router resources: `appointments`, `appointment-statuses`, `tickets`
     }
     ```
   - GET http://localhost:8000/api/appointments/appointment-statuses/{id}/
-  - PUT/PATCH http://localhost:8000/api/appointments/appointment-statuses/{id}/
   - DELETE http://localhost:8000/api/appointments/appointment-statuses/{id}/
+    
+    Notas sobre eliminación (global):
+    - Por defecto realiza soft delete (marca `deleted_at`). El estado deja de aparecer en la API y en el Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente (hard delete) de forma GLOBAL y que no quede registro en la base de datos ni en el Admin, agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/appointments/appointment-statuses/{id}/?hard=true`
   - Custom actions:
     - POST http://localhost:8000/api/appointments/appointment-statuses/{id}/activate/
       
@@ -700,7 +1071,7 @@ Router resources: `appointments`, `appointment-statuses`, `tickets`
 
 - tickets
   - GET http://localhost:8000/api/appointments/tickets/
-  - POST http://localhost:8000/api/appointments/tickets/
+  - POST http://localhost:8000/api/appointments/tickets/  (EN DESUSO - NO USAR)
     
     Body (JSON):
     ```json
@@ -710,9 +1081,39 @@ Router resources: `appointments`, `appointment-statuses`, `tickets`
       "payment_method": "cash"
     }
     ```
+    Nota:
+    - Este endpoint está DEPRECADO/EN DESUSO. Los tickets se crean automáticamente al crear una cita.
+    - No es necesario, ni recomendado, crear tickets manualmente vía API.
   - GET http://localhost:8000/api/appointments/tickets/{id}/
   - PUT/PATCH http://localhost:8000/api/appointments/tickets/{id}/
+    
+    Notas (PUT vs PATCH):
+    - PUT: actualización completa. Envía todos los campos que definen el ticket (por ejemplo, `amount`, `payment_method`, `status`, etc.). Si omites campos requeridos para tu modelo actual, puede fallar.
+    - PATCH: actualización parcial. Envía solo los campos que deseas modificar (ej.: solo `status`).
+    
+    Ejemplo (PUT: actualizar monto, método y marcar como pagado):
+    ```json
+    {
+      "amount": 120.0,
+      "payment_method": "card",
+      "status": "paid"
+    }
+    ```
+    
+    Ejemplo (PATCH: solo estado):
+    ```json
+    {
+      "status": "cancelled"
+    }
+    ```
   - DELETE http://localhost:8000/api/appointments/tickets/{id}/
+    
+    Notas sobre eliminación:
+    - Este DELETE realiza eliminación DEFINITIVA (hard delete) GLOBAL del ticket.
+    - El registro se elimina de la base de datos y no aparece en la API ni en el panel de Django Admin.
+    - Puedes usar explícitamente el flag para dejar claro el borrado definitivo:
+      - `DELETE http://localhost:8000/api/appointments/tickets/{id}/?hard=true`
+    - Respuesta: 204 No Content.
   - Custom actions:
     - POST http://localhost:8000/api/appointments/tickets/{id}/mark_as_paid/
     - POST http://localhost:8000/api/appointments/tickets/{id}/mark_paid/ (alias)
@@ -752,16 +1153,59 @@ Base: http://localhost:8000/api/configurations/
     
     Body (JSON):
     ```json
-    { "patient": 4 }
+    {
+      "patient": 123,
+      "reflexo_id": 2,
+      "testimony": true,
+      "private_observation": "Observación interna del especialista",
+      "observation": "Paciente refiere dolor lumbar leve",
+      "height": 1.68,
+      "weight": 62.5,
+      "last_weight": 61.0,
+      "menstruation": true,
+      "diu_type": "Cobre",
+      "gestation": false
+    }
     ```
-    Notas:
-    - `patient` debe ser el ID de un paciente existente y activo.
-    - Para usuarios no admin, el paciente debe pertenecer a la misma empresa (tenant).
-    - Si ya existe un historial activo para el paciente, retorna 409 con `existing_history_id`.
-  - POST http://localhost:8000/api/configurations/histories/{id}/delete/
     
     Notas:
-    - Elimina el historial de forma definitiva (hard delete). Respuesta: 204 No Content.
+    - Obligatorio: `patient` (ID del paciente existente y activo).
+    - Regla de tenant: el `patient` debe pertenecer al mismo `reflexo_id` que envías. Si eres Admin global y envías `reflexo_id`, DEBE coincidir con el tenant del paciente; si no envías `reflexo_id`, el backend lo infiere desde el paciente.
+    - Usuario con tenant (logueado en Reflexo A o B): normalmente solo envías `patient` y el sistema asigna tu `reflexo_id` automáticamente.
+    - Los campos clínicos (`testimony`, `private_observation`, `observation`, `height`, `weight`, `last_weight`, `menstruation`, `diu_type`, `gestation`) pueden incluirse aquí para documentar tu intención, pero la creación actualmente persiste únicamente `patient`/`reflexo_id` y el correlativo `local_id`. Actualiza los campos clínicos luego con `PUT/PATCH /histories/{id}/update/`.
+  - PUT http://localhost:8000/api/configurations/histories/{id}/update/
+    
+    Body (JSON) (actualización completa de campos soportados):
+    ```json
+    {
+      "testimony": true,
+      "private_observation": "Observación interna del especialista",
+      "observation": "Paciente refiere dolor lumbar leve",
+      "height": 1.68,
+      "weight": 62.5,
+      "last_weight": 61.0,
+      "menstruation": true,
+      "diu_type": "Cobre",
+      "gestation": false
+    }
+    ```
+
+  - PATCH http://localhost:8000/api/configurations/histories/{id}/update/
+    
+    Body (JSON) (actualización puntual):
+    ```json
+    {
+      "private_observation": "Revisión posterior sin novedades",
+      "observation": "Control a los 7 días"
+    }
+    ```
+  - DELETE http://localhost:8000/api/configurations/histories/{id}/delete/
+    
+    Notas sobre eliminación:
+    - Por defecto realiza soft delete (marca `deleted_at`). El historial deja de aparecer en la API y en el Admin, pero la fila sigue en la base de datos.
+    - Para eliminar definitivamente (hard delete) y que no quede registro en la base de datos ni en el Admin, agrega `?hard=true`:
+      - DELETE `http://localhost:8000/api/configurations/histories/{id}/delete/?hard=true`
+    - Alias legacy: también se admite `POST /api/configurations/histories/{id}/delete/` (con `{"hard": true}` en el body para hard delete), pero se recomienda usar DELETE.
     - Requiere que el historial pertenezca a tu empresa (tenant) si no eres admin.
 
 - document types
@@ -786,13 +1230,21 @@ Base: http://localhost:8000/api/configurations/
     - Si tu usuario tiene empresa, no es necesario enviar `reflexo_id`.
   - DELETE http://localhost:8000/api/configurations/document_types/{id}/delete/
     
-    Nota: eliminación definitiva (hard delete). Respuesta: 200 con `{ "status": "deleted" }`.
+    Notas sobre eliminación:
+    - Este DELETE realiza eliminación DEFINITIVA (hard delete) GLOBAL.
+    - El registro se elimina de la base de datos y ya no aparece en la API ni en Django Admin.
+    - Respuesta: 204 No Content.
+    - Ejemplo: `DELETE http://localhost:8000/api/configurations/document_types/5/delete/`
 
 - payment types
   - GET http://localhost:8000/api/configurations/payment_types/
   - DELETE http://localhost:8000/api/configurations/payment_types/{id}/delete/
     
-    Nota: eliminación definitiva (hard delete). Respuesta: 204 No Content.
+    Notas sobre eliminación:
+    - Este DELETE realiza eliminación DEFINITIVA (hard delete) GLOBAL.
+    - El registro se elimina de la base de datos y ya no aparece en la API ni en Django Admin.
+    - Respuesta: 204 No Content.
+    - Ejemplo: `DELETE http://localhost:8000/api/configurations/payment_types/3/delete/`
   - POST http://localhost:8000/api/configurations/payment_types/create/
     
     Body (JSON):
@@ -805,6 +1257,147 @@ Base: http://localhost:8000/api/configurations/
     - Los tipos de pago son globales (no multitenant en BD). Este endpoint solo requiere `name`.
     - Cualquier `reflexo_id` enviado será ignorado.
   - PUT http://localhost:8000/api/configurations/payment_types/{id}/edit/
+
+- payment statuses
+  - GET http://localhost:8000/api/configurations/payment_statuses/
+  - POST http://localhost:8000/api/configurations/payment_statuses/create/
+    
+    Body (JSON):
+    ```json
+    {
+      "name": "Pagado",
+      "description": "Transacción liquidada"
+    }
+    ```
+    Notas:
+    - Globales (no multitenant en BD).
+    - Campos: `name` (requerido), `description` (opcional).
+  - PUT/PATCH http://localhost:8000/api/configurations/payment_statuses/{id}/edit/
+    
+    Notas (PUT vs PATCH):
+    - PUT: requiere `name` en el body y lo actualizará por completo (puedes incluir también `description`).
+    - PATCH: actualización parcial; puedes enviar solo los campos a modificar. Si envías `name`, no puede ser vacío.
+    
+    Ejemplo (PUT):
+    ```json
+    {
+      "name": "Pagado",
+      "description": "Transacción confirmada"
+    }
+    ```
+    
+    Ejemplo (PATCH: solo description):
+    ```json
+    {
+      "description": "Liquidación completada"
+    }
+    ```
+  - DELETE http://localhost:8000/api/configurations/payment_statuses/{id}/delete/
+    
+    Notas sobre eliminación:
+  - GET http://localhost:8000/api/configurations/predetermined_prices/
+  - POST http://localhost:8000/api/configurations/predetermined_prices/create/
+  - PUT http://localhost:8000/api/configurations/predetermined_prices/{id}/update/
+    
+    Body (JSON):
+    ```json
+    {
+      "name": "Consulta General",
+      "price": 120.0,
+      "description": "Precio actualizado"
+    }
+    ```
+    Ejemplo (PUT: actualizar nombre y precio):
+    ```json
+    {
+      "name": "Consulta Integral",
+      "price": 130.0
+    }
+    ```
+  - PATCH http://localhost:8000/api/configurations/predetermined_prices/{id}/update/
+    
+    Body (JSON) (actualización puntual):
+    ```json
+    {
+      "price": 110.0
+    }
+    ```
+    Ejemplo (PATCH: solo precio):
+    ```json
+    {
+      "price": 115.0
+    }
+    ```
+    Ejemplo (usuario logueado en Reflexo A):
+    ```json
+    {
+      "name": "Consulta General",
+      "price": 80.00
+    }
+    ```
+    Ejemplo (usuario logueado en Reflexo B):
+    ```json
+    {
+      "name": "Consulta General",
+      "price": 80.00
+    }
+    ```
+    Body (JSON) (admin creando en Reflexo A):
+    ```json
+    {
+      "name": "Consulta General",
+      "price": 80.00,
+      "reflexo_id": 1
+    }
+    ```
+    Body (JSON) (admin creando en Reflexo B):
+    ```json
+    {
+      "name": "Consulta General",
+      "price": 80.00,
+      "reflexo_id": 2
+    }
+    ```
+    Notas (multitenant):
+    - Los precios predeterminados están aislados por empresa (tenant) vía `reflexo_id`.
+    - Usuario con tenant: se crea en su propio tenant automáticamente.
+    - Administrador global: puede especificar `reflexo_id` para crear en una empresa específica (p. ej. 1 = Reflexo A, 2 = Reflexo B).
+    - Admin sin tenant asociado no verá resultados a menos que tenga tenant o se adapte la vista; por defecto se filtra por el tenant del usuario.
+  - PUT/PATCH/POST http://localhost:8000/api/configurations/predetermined_prices/{id}/update/
+    
+    Notas (PUT vs PATCH vs POST):
+    - PUT: actualización completa; se recomienda enviar los campos principales (`name`, `price`).
+    - PATCH: actualización parcial; envía solo los campos que deseas modificar.
+    - POST: alias de compatibilidad; se comporta como PATCH (actualización parcial).
+    
+    Ejemplo (PUT — actualizar nombre y precio):
+    ```json
+    {
+      "name": "Consulta Integral",
+      "price": 95.00
+    }
+    ```
+    
+    Ejemplo (PATCH — solo precio):
+    ```json
+    {
+      "price": 85.00
+    }
+    ```
+    
+    Ejemplo (POST — alias parcial, solo nombre):
+    ```json
+    {
+      "name": "Consulta Preferente"
+    }
+    ```
+  - DELETE http://localhost:8000/api/configurations/predetermined_prices/{id}/delete/
+    
+    Notas sobre eliminación:
+    - Este DELETE realiza eliminación DEFINITIVA (hard delete) GLOBAL.
+    - El registro se elimina de la base de datos y no aparece en la API ni en Django Admin.
+    - Respuesta: 204 No Content.
+    - Ejemplo: `DELETE http://localhost:8000/api/configurations/predetermined_prices/7/delete/`
 
 ---
 

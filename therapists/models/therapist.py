@@ -15,6 +15,9 @@ class Therapist(models.Model):
         null=True,      # permite que sea vacío temporalmente
         blank=True      # permite que el formulario del admin lo deje vacío
     )
+
+    # Identificador secuencial por empresa (no reemplaza el ID global)
+    local_id = models.IntegerField(null=True, blank=True, verbose_name="ID local (por empresa)")
     
     # Datos personales
     document_type = models.ForeignKey(
@@ -72,4 +75,11 @@ class Therapist(models.Model):
         db_table = 'therapists'
         verbose_name = "Terapeuta"
         verbose_name_plural = "Terapeutas"
-        ordering = ['first_name', 'last_name_paternal']
+        ordering = ['reflexo_id', 'local_id', 'first_name', 'last_name_paternal']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['reflexo', 'local_id'],
+                name='uniq_therapist_local_id_per_reflexo',
+                condition=models.Q(local_id__isnull=False)
+            )
+        ]
