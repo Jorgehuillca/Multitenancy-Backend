@@ -1,7 +1,7 @@
 # 🏛️ API Endpoints Completo - Backend Reflexo Multitenancy
 
 ## 🌐 Base URL
-
+xd
 ```
 http://localhost:8000/   # Desarrollo local
 ```

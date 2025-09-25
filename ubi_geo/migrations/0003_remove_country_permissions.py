@@ -23,6 +23,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('ubi_geo', '0002_remove_region_country'),
+        ('auth', '0001_initial'),  # Ensure auth app is available
+        ('contenttypes', '0001_initial'),  # Ensure contenttypes app is available
     ]
 
     operations = [

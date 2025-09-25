@@ -69,7 +69,8 @@ class CompanyDataViewSet(viewsets.ModelViewSet):
             message = "Logo actualizado correctamente" if request.method == 'PUT' else "Logo subido correctamente"
             # Incluir URL absoluta y relativa para facilidad del cliente
             media_url = settings.MEDIA_URL if hasattr(settings, 'MEDIA_URL') else '/media/'
-            rel_url = logo_url if str(logo_url).startswith(media_url) else f"{media_url}{str(logo_url).lstrip('/\\')}"
+            cleaned_url = str(logo_url).lstrip('/\\')
+            rel_url = logo_url if str(logo_url).startswith(media_url) else f"{media_url}{cleaned_url}"
             abs_url = request.build_absolute_uri(rel_url)
             return Response({
                 "message": message,
