@@ -1,5 +1,2 @@
-from .auth_service import AuthService
-from .user_service import UserService
-from .permission_service import PermissionService
-
-__all__ = ['AuthService', 'UserService', 'PermissionService'] 
+# Evitar importaciones ansiosas que pueden disparar dependencias (e.g., guardian)
+__all__ = ['AuthService', 'UserService', 'PermissionService']

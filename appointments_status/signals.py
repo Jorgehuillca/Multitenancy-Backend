@@ -16,12 +16,24 @@ def create_ticket_for_appointment(sender, instance, created, **kwargs):
     ticket_service = TicketService()
     ticket_number = ticket_service.generate_ticket_number()  # string
 
+    # Obtener el método de pago del tipo de pago de la cita
+    payment_method = 'efectivo'  # Por defecto
+    if instance.payment_type:
+        payment_method = instance.payment_type.name.lower()
+        # Mapear nombres de PaymentType a métodos de pago del ticket
+        payment_method_mapping = {
+            'efectivo': 'efectivo',
+            'tarjeta de debito': 'tarjeta',
+            'yape': 'yape',
+        }
+        payment_method = payment_method_mapping.get(payment_method, payment_method)
+
     with transaction.atomic():
         Ticket.objects.create(
             appointment=instance,
             ticket_number=ticket_number,
             amount=instance.payment or 0,
-            payment_method='efectivo',
+            payment_method=payment_method,
             description=f'Ticket generado automáticamente para cita #{instance.id}',
             status='pending',
         )
@@ -52,16 +64,53 @@ def update_ticket_when_appointment_changes(sender, instance, created, **kwargs):
     except Ticket.DoesNotExist:
         # Si por alguna razón no existe, lo creamos sin volver a hacer save() en la cita
         ticket_service = TicketService()
+        
+        # Obtener el método de pago del tipo de pago de la cita
+        payment_method = 'efectivo'  # Por defecto
+        if instance.payment_type:
+            payment_method = instance.payment_type.name.lower()
+            # Mapear nombres de PaymentType a métodos de pago del ticket
+            payment_method_mapping = {
+                'efectivo': 'efectivo',
+                'tarjeta de debito': 'tarjeta',
+                'yape': 'yape',
+            }
+            payment_method = payment_method_mapping.get(payment_method, payment_method)
+        
         Ticket.objects.create(
             appointment=instance,
             ticket_number=instance.ticket_number or ticket_service.generate_ticket_number(),
             amount=instance.payment or 0,
-            payment_method='efectivo',
+            payment_method=payment_method,
             description=f'Ticket autogenerado por sincronización para cita #{instance.id}',
             status='pending',
         )
         return
 
+    # Actualizar amount y payment_method si han cambiado
+    needs_update = False
+    update_fields = []
+    
     if instance.payment is not None and ticket.amount != instance.payment:
         ticket.amount = instance.payment
-        ticket.save(update_fields=['amount', 'updated_at'])
+        update_fields.append('amount')
+        needs_update = True
+    
+    # Actualizar método de pago si el tipo de pago cambió
+    if instance.payment_type:
+        new_payment_method = instance.payment_type.name.lower()
+        payment_method_mapping = {
+            'efectivo': 'efectivo',
+            'tarjeta de debito': 'tarjeta',
+            'yape': 'yape',
+        }
+        new_payment_method = payment_method_mapping.get(new_payment_method, new_payment_method)
+        
+        if ticket.payment_method != new_payment_method:
+            ticket.payment_method = new_payment_method
+            update_fields.append('payment_method')
+            needs_update = True
+    
+    if needs_update:
+        update_fields.append('updated_at')
+        ticket.save(update_fields=update_fields)

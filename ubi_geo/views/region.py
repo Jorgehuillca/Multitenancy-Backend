@@ -11,6 +11,7 @@ class RegionViewSet(ReadOnlyModelViewSet):
     """
     queryset = Region.objects.filter(deleted_at__isnull=True).order_by("name")
     serializer_class = RegionSerializer
+    pagination_class = None
 
     def get_queryset(self):
         base = Region.objects.filter(deleted_at__isnull=True).order_by("name")

@@ -14,6 +14,7 @@ class ProvinceViewSet(ReadOnlyModelViewSet):
       - ?region=<id>            -> provincias de esa región
     """
     serializer_class = ProvinceSerializer
+    pagination_class = None
 
     def get_queryset(self):
         qs = Province.objects.select_related("region").filter(deleted_at__isnull=True).order_by("name")

@@ -28,9 +28,11 @@ class BaseTenantAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))
-        # El campo tenant siempre de solo lectura
-        if self.tenant_field_name not in ro:
-            ro.append(self.tenant_field_name)
+        # El campo tenant solo de solo lectura para usuarios con tenant
+        # Los superusers pueden elegir el tenant
+        if not is_global_admin(request.user):
+            if self.tenant_field_name not in ro:
+                ro.append(self.tenant_field_name)
         # Agregar timestamps si existen
         try:
             model_fields = {f.name for f in self.model._meta.get_fields()}
@@ -45,6 +47,7 @@ class BaseTenantAdmin(admin.ModelAdmin):
         tenant_id = get_tenant(request.user)
         if tenant_id is not None:
             setattr(obj, f"{self.tenant_field_name}_id", tenant_id)
+        # Si el usuario no tiene tenant (ej: superuser), respetar la elección del formulario
         super().save_model(request, obj, form, change)
 
 
@@ -125,11 +128,11 @@ class AppointmentAdmin(BaseTenantAdmin):
             'fields': ('initial_date', 'final_date')
         }),
         ('Información de Pago', {
-            'fields': ('social_benefit', 'payment_detail', 'payment', 'ticket_number')
+            'fields': ('social_benefit', 'payment_detail', 'payment', 'payment_type', 'ticket_number')
         }),
         ('Relaciones', {
-            'fields': ('patient', 'therapist', 'history', 'payment_status', 'appointment_status'),
-            'description': 'Selecciona paciente, terapeuta, historial y estado de pago.'
+            'fields': ('reflexo', 'patient', 'therapist', 'history', 'payment_status', 'appointment_status'),
+            'description': 'Selecciona tenant, paciente, terapeuta, historial y estado de pago.'
         }),
         ('Información del Sistema', {
             'fields': ('is_completed', 'is_pending', 'created_at', 'updated_at', 'deleted_at'),

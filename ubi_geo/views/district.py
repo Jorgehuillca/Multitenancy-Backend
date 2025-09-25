@@ -13,6 +13,7 @@ class DistrictViewSet(ReadOnlyModelViewSet):
       - ?province=<id>           -> distritos de esa provincia
     """
     serializer_class = DistrictSerializer
+    pagination_class = None
 
     def get_queryset(self):
         qs = (

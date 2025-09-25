@@ -1,4 +1,5 @@
 from rest_framework import permissions
+from ..utils.tenant import is_global_admin
 
 
 class IsAdminUser(permissions.BasePermission):
@@ -6,7 +7,7 @@ class IsAdminUser(permissions.BasePermission):
     Permiso personalizado para usuarios administradores
     """
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.rol == 'Admin'
+        return bool(request.user and request.user.is_authenticated and is_global_admin(request.user))
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):

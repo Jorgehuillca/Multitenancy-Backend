@@ -129,12 +129,13 @@ class ReportService:
         """Resumen diario de efectivo detallado por cita."""
         query_date = validated_data.get("date")
 
+        # Usar el mismo filtro de fecha que funciona en improved-daily-cash
         payments = (
             Appointment.objects
             .filter(
-                appointment_date=query_date,
+                appointment_date__date=query_date,
                 payment__isnull=False,
-                payment_type__isnull=False
+                payment__gt=0
             )
         )
         
@@ -142,7 +143,7 @@ class ReportService:
         if user:
             payments = filter_by_tenant(payments, user, field='reflexo')
         
-        payments = payments.values(
+        payments = payments.select_related('payment_type').values(
             'id',
             'payment',
             'payment_type',
@@ -154,7 +155,7 @@ class ReportService:
                 "id_cita": p['id'],
                 "payment": p['payment'],
                 "payment_type": p['payment_type'],
-                "payment_type_name": p['payment_type__name']
+                "payment_type_name": p['payment_type__name'] or "No especificado"
             }
             for p in payments
         ]

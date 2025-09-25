@@ -207,6 +207,64 @@ Todas las APIs siguen el patrón: `/api/[modulo]/[recurso]/`
 }
 ```
 
+### Roles
+| Método | Endpoint | Descripción | Autenticación |
+|--------|----------|-------------|---------------|
+| **GET** | `/api/architect/roles/` | Listar roles | Requerida |
+| **POST** | `/api/architect/roles/create/` | Crear rol | Solo Admin |
+| **GET** | `/api/architect/roles/{id}/` | Ver rol específico | Requerida |
+| **PUT** | `/api/architect/roles/{id}/edit/` | Actualizar rol | Solo Admin |
+| **PATCH** | `/api/architect/roles/{id}/edit/` | Actualización parcial | Solo Admin |
+| **DELETE** | `/api/architect/roles/{id}/delete/` | Eliminar rol | Solo Admin |
+
+#### Ejemplos de Roles
+
+**Listar Roles:**
+- Método: GET
+- URL: `{{base_url}}/api/architect/roles/`
+- Headers:
+  ```
+  Authorization: Bearer <token>
+  ```
+
+**Crear Rol (Solo Admin):**
+- Método: POST
+- URL: `{{base_url}}/api/architect/roles/create/`
+- Headers:
+  ```
+  Authorization: Bearer <token>
+  Content-Type: application/json
+  ```
+- Body (raw JSON):
+  ```json
+  { "name": "Manager", "guard_name": "web" }
+  ```
+
+**Ver Rol por ID:**
+- Método: GET
+- URL: `{{base_url}}/api/architect/roles/1/`
+- Headers: Authorization
+
+**Actualizar Rol (PUT/PATCH, Solo Admin):**
+- URL base: `{{base_url}}/api/architect/roles/{id}/edit/`
+- PUT Body:
+  ```json
+  { "name": "Manager", "guard_name": "web" }
+  ```
+- PATCH Body:
+  ```json
+  { "name": "Supervisor" }
+  ```
+
+**Eliminar Rol (Solo Admin):**
+- Método: DELETE
+- URL: `{{base_url}}/api/architect/roles/1/delete/`
+- Headers: Authorization
+
+Notas:
+- Lectura requiere autenticación; escritura requiere admin (permiso `IsAdminUser`).
+- Códigos de respuesta comunes: 200/201/204, 400 (validación), 403 (forbidden), 404 (no encontrado).
+
 ---
 
 ## 👤 Módulo 2: Perfiles de Usuarios (`/api/profiles/`)
