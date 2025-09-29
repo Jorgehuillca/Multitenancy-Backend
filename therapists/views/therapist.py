@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from therapists.models.therapist import Therapist
 from therapists.serializers.therapist import TherapistSerializer, TherapistPhotoSerializer
-from architect.utils.tenant import filter_by_tenant, is_global_admin
+from architect.utils.tenant import filter_by_tenant, is_global_admin, get_tenant
 from django.core.files.storage import default_storage
 
 
@@ -115,18 +115,32 @@ class TherapistViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        DELETE detail:
-        - Por defecto: soft delete (marca deleted_at).
-        - ?hard=true: hard delete (elimina definitivamente, global: no queda en DB ni Admin).
+        DELETE detail: soft delete (marca deleted_at).
         """
         instance = self.get_object()
-        hard_param = str(request.query_params.get('hard', '')).lower()
-        hard = hard_param in ('1', 'true', 'yes')
-        if hard:
-            instance.delete()
-        else:
-            instance.soft_delete()
+        instance.soft_delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def hard_delete(self, request, *args, **kwargs):
+        """
+        DELETE detail: hard delete (elimina definitivamente de la DB).
+        """
+        try:
+            # Obtener terapeuta sin filtros de tenant para hard delete
+            therapist = Therapist.objects.get(pk=kwargs.get('pk'))
+            
+            # Verificar permisos de tenant antes de eliminar
+            if not is_global_admin(request.user):
+                tenant_id = get_tenant(request.user)
+                if therapist.reflexo_id != tenant_id:
+                    return Response({"detail": "No tienes permisos para eliminar este terapeuta."}, 
+                                  status=status.HTTP_403_FORBIDDEN)
+            
+            therapist.delete()  # Hard delete
+            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+        except Therapist.DoesNotExist:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=False, methods=["get"])
     def inactive(self, request):
@@ -159,11 +173,9 @@ class TherapistViewSet(viewsets.ModelViewSet):
             # Idempotente: si ya está activo, responder 200 con el estado actual
             return Response(self.get_serializer(therapist).data)
 
-    @action(detail=True, methods=["post", "delete"], url_path="photo")
     def photo(self, request, pk=None):
         """
         POST  /therapists/{id}/photo/  -> sube/asigna foto (multipart JSON)
-        DELETE /therapists/{id}/photo/ -> elimina archivo físico y limpia BD
         Respeta aislamiento por tenant para usuarios no admin.
         """
         # Obtener terapeuta respetando tenant
@@ -175,18 +187,30 @@ class TherapistViewSet(viewsets.ModelViewSet):
         except Therapist.DoesNotExist:
             return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        if request.method.lower() == 'post':
-            serializer = TherapistPhotoSerializer(therapist, data=request.data, partial=True, context={"request": request})
-            if serializer.is_valid():
-                serializer.save()
-                # Responder con el serializer principal para incluir profile_picture_url
-                return Response({
-                    "message": "Foto actualizada",
-                    "therapist": TherapistSerializer(therapist, context={"request": request}).data
-                })
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = TherapistPhotoSerializer(therapist, data=request.data, partial=True, context={"request": request})
+        if serializer.is_valid():
+            serializer.save()
+            # Responder con el serializer principal para incluir profile_picture_url
+            return Response({
+                "message": "Foto actualizada",
+                "therapist": TherapistSerializer(therapist, context={"request": request}).data
+            })
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # DELETE
+    def photo_delete(self, request, pk=None):
+        """
+        DELETE /therapists/{id}/photo/delete/ -> elimina archivo físico y limpia BD
+        Respeta aislamiento por tenant para usuarios no admin.
+        """
+        # Obtener terapeuta respetando tenant
+        try:
+            qs = Therapist.objects.all()
+            if not is_global_admin(request.user):
+                qs = filter_by_tenant(qs, request.user, field='reflexo')
+            therapist = qs.get(pk=pk)
+        except Therapist.DoesNotExist:
+            return Response({"detail": "No encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
         name = therapist.profile_picture or ""
         if name:
             try:

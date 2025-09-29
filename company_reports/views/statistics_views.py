@@ -37,7 +37,7 @@ class GetMetricsView(APIView):
 
         try:
             service = StatisticsService()
-            data = service.get_statistics(start_date, end_date)
+            data = service.get_statistics(start_date, end_date, request.user)
             
             serializer = StatisticsResource(data)
             return Response(serializer.data, status=status.HTTP_200_OK)

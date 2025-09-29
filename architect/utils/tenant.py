@@ -50,9 +50,13 @@ def is_global_admin(user) -> bool:
     - Django superuser
     - Has explicit permission 'architect.view_all_tenants'
     - Or a legacy/custom attribute rol == 'Admin' (kept for backward compatibility)
+    - Or a custom boolean flag `is_global_admin` placed on the user model
     """
     if not getattr(user, 'is_authenticated', False):
         return False
+    # Custom flag supported in some deployments
+    if getattr(user, 'is_global_admin', False):
+        return True
     if getattr(user, 'is_superuser', False):
         return True
     # Check explicit Django permission that can be granted in admin

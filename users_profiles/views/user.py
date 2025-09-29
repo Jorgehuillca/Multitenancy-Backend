@@ -108,7 +108,9 @@ class UserSearchView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        """Filtra usuarios según el parámetro de búsqueda"""
+        """Filtra usuarios según el parámetro de búsqueda y tenant"""
+        from architect.utils.tenant import filter_by_tenant
+        
         queryset = User.objects.filter(is_active=True)
         search_query = self.request.query_params.get('q', None)
         
@@ -118,6 +120,9 @@ class UserSearchView(generics.ListAPIView):
                 models.Q(name__icontains=search_query) |
                 models.Q(paternal_lastname__icontains=search_query)
             )
+        
+        # Filtrar por tenant del usuario autenticado
+        queryset = filter_by_tenant(queryset, self.request.user)
         
         return queryset[:20]  # Limitar a 20 resultados
 

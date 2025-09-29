@@ -2,8 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from ..serializers.permission import PermissionSerializer, RoleSerializer
-from ..models.permission import Permission, Role
+from ..serializers.permission import PermissionSerializer
+from ..models.permission import Permission
 
 
 class PermissionView(APIView):
@@ -15,10 +15,4 @@ class PermissionView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class RoleView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        roles = Role.objects.all()
-        serializer = RoleSerializer(roles, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK) 
+"""Las vistas de rol fueron movidas a architect.views.role con control admin-only."""

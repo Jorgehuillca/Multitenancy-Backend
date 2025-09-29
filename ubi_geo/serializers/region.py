@@ -7,7 +7,7 @@ class RegionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Region
-        fields = ['id', 'name', 'created_at', 'updated_at', 'deleted_at']
+        fields = ['id', 'name', 'ubigeo_code', 'created_at', 'updated_at', 'deleted_at']
         read_only_fields = ['id', 'created_at', 'updated_at', 'deleted_at']
     
     def validate_name(self, value):

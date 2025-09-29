@@ -26,10 +26,9 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filtra el queryset según los parámetros de la request.
+        GLOBAL: No usa filtrado por tenant.
         """
         queryset = AppointmentStatus.objects.all()
-        # Aislamiento por tenant
-        queryset = filter_by_tenant(queryset, self.request.user, field='reflexo')
         
         # Filtro por estado "activo" basado en deleted_at
         is_active = self.request.query_params.get('is_active', None)
@@ -43,29 +42,12 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        # Asignar tenant en create
-        from architect.utils.tenant import get_tenant, is_global_admin
-        if is_global_admin(self.request.user):
-            # Admin: permitir que envíe reflexo_id; si no lo envía, usar su tenant
-            provided_reflexo = serializer.validated_data.get('reflexo')
-            if provided_reflexo is not None:
-                serializer.save()
-            else:
-                serializer.save(reflexo_id=get_tenant(self.request.user))
-        else:
-            # Usuario de empresa: forzar su tenant
-            serializer.save(reflexo_id=get_tenant(self.request.user))
+        # GLOBAL: No necesita asignar tenant
+        serializer.save()
 
     def perform_update(self, serializer):
-        # Evitar que no-admin cambie de tenant
-        from architect.utils.tenant import is_global_admin, get_tenant
-        data = dict(serializer.validated_data)
-        if not is_global_admin(self.request.user):
-            data.pop('reflexo', None)
-            data.pop('reflexo_id', None)
-            serializer.save(**data)
-        else:
-            serializer.save()
+        # GLOBAL: No necesita validación de tenant
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -88,31 +70,34 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def active(self, request):
         """
-        Obtiene solo los estados activos.
+        Obtiene solo los estados activos (no eliminados).
         """
-        queryset = self.get_queryset().filter(is_active=True)
+        from django.utils import timezone
+        queryset = self.get_queryset().filter(deleted_at__isnull=True)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
         """
-        Activa un estado de cita.
+        Reactiva un estado de cita (restaura del soft delete).
         """
+        from django.utils import timezone
         status_obj = self.get_object()
-        status_obj.is_active = True
-        status_obj.save()
+        status_obj.deleted_at = None
+        status_obj.save(update_fields=['deleted_at', 'updated_at'])
         serializer = self.get_serializer(status_obj)
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def deactivate(self, request, pk=None):
         """
-        Desactiva un estado de cita.
+        Desactiva un estado de cita (soft delete).
         """
+        from django.utils import timezone
         status_obj = self.get_object()
-        status_obj.is_active = False
-        status_obj.save()
+        status_obj.deleted_at = timezone.now()
+        status_obj.save(update_fields=['deleted_at', 'updated_at'])
         serializer = self.get_serializer(status_obj)
         return Response(serializer.data)
     
@@ -124,7 +109,27 @@ class AppointmentStatusViewSet(viewsets.ModelViewSet):
         status_obj = self.get_object()
         appointments = status_obj.appointment_set.all()
         
-        # TODO: (Dependencia externa) - Usar el serializer de Appointment cuando esté disponible
-        from ..serializers import AppointmentSerializer
-        serializer = AppointmentSerializer(appointments, many=True)
-        return Response(serializer.data)
+        # Respuesta simplificada para evitar import circular
+        appointments_data = []
+        for appointment in appointments:
+            appointments_data.append({
+                'id': appointment.id,
+                'patient_name': f"{appointment.patient.name} {appointment.patient.paternal_lastname}" if appointment.patient else None,
+                'therapist_name': f"{appointment.therapist.first_name} {appointment.therapist.last_name_paternal}" if appointment.therapist else None,
+                'appointment_date': appointment.appointment_date,
+                'hour': appointment.hour,
+                'appointment_type': appointment.appointment_type,
+                'room': appointment.room,
+                'created_at': appointment.created_at,
+                'updated_at': appointment.updated_at,
+            })
+        
+        return Response({
+            'status': {
+                'id': status_obj.id,
+                'name': status_obj.name,
+                'description': status_obj.description,
+            },
+            'appointments': appointments_data,
+            'count': len(appointments_data)
+        })

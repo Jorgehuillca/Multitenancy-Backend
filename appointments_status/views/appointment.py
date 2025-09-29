@@ -83,7 +83,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Cita no encontrada'}, status=status.HTTP_404_NOT_FOUND)
         data = dict(request.data)
         if not is_global_admin(request.user):
-            data['reflexo'] = getattr(request.user, 'reflexo_id', None)
+            data['reflexo_id'] = getattr(request.user, 'reflexo_id', None)
         return self.service.update(appointment_id, data)
     
     def destroy(self, request, *args, **kwargs):
@@ -207,8 +207,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         Cancela una cita específica.
         """
         appointment = self.get_object()
-        appointment.appointment_status = 'CANCELADO'  # Usar el enum actualizado
-        appointment.save(update_fields=['appointment_status', 'updated_at'])
+        
+        # Buscar el estado "Cancelada" o similar
+        from ..models import AppointmentStatus
+        cancelled_status = AppointmentStatus.objects.filter(
+            name__iexact='cancelada'
+        ).first()
+        
+        if cancelled_status:
+            appointment.appointment_status = cancelled_status
+            appointment.save(update_fields=['appointment_status', 'updated_at'])
         
         # También cancelar el ticket asociado
         try:
@@ -254,9 +262,18 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Buscar el estado "En espera" para reprogramar la cita
+        from ..models import AppointmentStatus
+        pending_status = AppointmentStatus.objects.filter(
+            name__iexact='en espera'
+        ).first()
+        
         # Actualizar la cita
         appointment.appointment_date = date_obj
         appointment.hour = hour_obj
-        appointment.save(update_fields=['appointment_date', 'hour', 'updated_at'])
+        if pending_status:
+            appointment.appointment_status = pending_status
+        
+        appointment.save(update_fields=['appointment_date', 'hour', 'appointment_status', 'updated_at'])
         
         return Response({'message': 'Cita reprogramada exitosamente'})

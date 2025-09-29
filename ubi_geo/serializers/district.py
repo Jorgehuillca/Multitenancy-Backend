@@ -10,7 +10,7 @@ class DistrictSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = District
-        fields = ['id', 'name', 'province', 'province_name', 'region_name', 'created_at', 'updated_at', 'deleted_at']
+        fields = ['id', 'name', 'ubigeo_code', 'sequence', 'province', 'province_name', 'region_name', 'created_at', 'updated_at', 'deleted_at']
         read_only_fields = ['id', 'province_name', 'region_name', 'created_at', 'updated_at', 'deleted_at']
     
     def validate_name(self, value):

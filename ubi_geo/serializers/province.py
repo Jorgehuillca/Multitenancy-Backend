@@ -9,7 +9,7 @@ class ProvinceSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Province
-        fields = ['id', 'name', 'region', 'region_name', 'created_at', 'updated_at', 'deleted_at']
+        fields = ['id', 'name', 'ubigeo_code', 'sequence', 'region', 'region_name', 'created_at', 'updated_at', 'deleted_at']
         read_only_fields = ['id', 'region_name', 'created_at', 'updated_at', 'deleted_at']
     
     def validate_name(self, value):

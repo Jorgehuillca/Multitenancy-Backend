@@ -9,11 +9,7 @@ from rest_framework.views import APIView
 
 from company_reports.models.company import CompanyData
 from company_reports.serialiazers.company_serializers import CompanyDataSerializer
-from company_reports.services.companay_services import (
-    CompanyService,
-    LogoValidationService,
-    LogoFileManager,
-)
+from company_reports.services.companay_services import CompanyService
 from architect.utils.tenant import filter_by_tenant, assign_tenant_on_create, get_tenant
 
 
@@ -36,26 +32,13 @@ class CompanyDataViewSet(viewsets.ModelViewSet):
         PUT: Actualiza el logo existente
         """
         company = self.get_object()
-        # Soportar tanto URL (company_logo) como archivo multipart
         logo_url = request.data.get('company_logo')
-        logo_file = (
-            request.FILES.get('logo_file')
-            or request.FILES.get('photo_file')
-            or request.FILES.get('company_logo')
-        )
-
-        # Si viene archivo, validarlo y guardarlo en storage
-        if logo_file is not None:
-            try:
-                LogoValidationService.validate(logo_file)
-                saved_path = LogoFileManager.save_logo_file(company.company_name or 'company', logo_file)
-                logo_url = saved_path  # Guardamos la ruta relativa en DB
-            except ValueError as e:
-                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Si no hay ni archivo ni URL, error
+        
         if not logo_url:
-            return Response({"error": "Se requiere la URL del logo o un archivo 'logo_file'"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Se requiere la URL del logo"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Si es POST y ya tiene logo, no permitir la subida
         if request.method == 'POST' and company.company_logo:
@@ -67,16 +50,7 @@ class CompanyDataViewSet(viewsets.ModelViewSet):
         try:
             CompanyService.process_logo(company, logo_url)
             message = "Logo actualizado correctamente" if request.method == 'PUT' else "Logo subido correctamente"
-            # Incluir URL absoluta y relativa para facilidad del cliente
-            media_url = settings.MEDIA_URL if hasattr(settings, 'MEDIA_URL') else '/media/'
-            cleaned_url = str(logo_url).lstrip('/\\')
-            rel_url = logo_url if str(logo_url).startswith(media_url) else f"{media_url}{cleaned_url}"
-            abs_url = request.build_absolute_uri(rel_url)
-            return Response({
-                "message": message,
-                "company_logo": rel_url,
-                "company_logo_absolute": abs_url,
-            }, status=status.HTTP_200_OK)
+            return Response({"message": message}, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -9,11 +9,11 @@ from architect.utils.tenant import filter_by_tenant, is_global_admin
 
 patient_service = PatientService()
 
-class PatientListCreateView(APIView):
+class PatientListAPIView(APIView):
     serializer_class = PatientSerializer
     queryset = Patient.objects.all()
+    
     def get(self, request):
-
         # Paginación opcional: si viene per_page o page, usar servicio de paginación
         if "per_page" in request.GET or "page" in request.GET:
             page_obj = patient_service.get_paginated(request)
@@ -33,6 +33,9 @@ class PatientListCreateView(APIView):
         serializer = PatientListSerializer(patients, many=True)
         return Response(serializer.data)
 
+class PatientCreateAPIView(APIView):
+    serializer_class = PatientSerializer
+    
     def post(self, request):
         serializer = PatientSerializer(data=request.data)
         if not serializer.is_valid():

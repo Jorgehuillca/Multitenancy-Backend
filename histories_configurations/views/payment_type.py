@@ -5,9 +5,23 @@ from ..models.payment_type import PaymentType
 from architect.utils.tenant import get_tenant
 
 @csrf_exempt
-def payment_types_list(request):
+def payment_types_list(request, pk=None):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
+    
+    # Si se proporciona pk, devolver un tipo específico
+    if pk is not None:
+        try:
+            pt = PaymentType.objects.get(pk=pk, deleted_at__isnull=True)
+            return JsonResponse({
+                "id": pt.id,
+                "name": pt.name,
+                "created_at": pt.created_at.isoformat() if pt.created_at else None,
+                "updated_at": pt.updated_at.isoformat() if pt.updated_at else None
+            })
+        except PaymentType.DoesNotExist:
+            return JsonResponse({"error": "No encontrado"}, status=404)
+    
     # Global: no filtrar por tenant
     qs = PaymentType.objects.filter(deleted_at__isnull=True)
     data = [{"id": x.id, "name": x.name} for x in qs]

@@ -5,12 +5,13 @@ from django.db.models.functions import Concat, TruncDate
 from appointments_status.models.appointment import Appointment
 from appointments_status.models.ticket import Ticket
 from therapists.models.therapist import Therapist
+from architect.utils.tenant import filter_by_tenant, get_tenant, is_global_admin
 
 
 # from django.db import models  # 👈 no se usa
 
 class ReportService:
-    def get_appointments_count_by_therapist(self, validated_data):
+    def get_appointments_count_by_therapist(self, validated_data, user=None):
         """
         Conteo de TODAS las citas por terapeuta para una fecha dada.
         Agrupa desde Appointment para evitar problemas de related_name.
@@ -25,18 +26,24 @@ class ReportService:
             .filter(therapist__isnull=False)
             .annotate(day=TruncDate("appointment_date"))
             .filter(day=query_date)
-            .values(
-                "therapist_id",
-                "therapist__first_name",
-                "therapist__last_name_paternal",
-                "therapist__last_name_maternal",
-            )
-            .annotate(appointments_count=Count("id"))
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        qs = qs.values(
+            "therapist_id",
+            "therapist__first_name",
+            "therapist__last_name_paternal",
+            "therapist__last_name_maternal",
+            "therapist__reflexo_id",
+        ).annotate(appointments_count=Count("id"))
 
         therapists = [
             {
                 "id": row["therapist_id"],
+                "reflexo_id": row["therapist__reflexo_id"],
                 "name": f'{row["therapist__first_name"]} {row["therapist__last_name_paternal"] or ""} {row["therapist__last_name_maternal"] or ""}'.strip(),
                 "last_name_paternal": row["therapist__last_name_paternal"],
                 "last_name_maternal": row["therapist__last_name_maternal"],
@@ -55,7 +62,7 @@ class ReportService:
             "total_appointments_count": total_appointments,
         }
 
-    def get_patients_by_therapist(self, validated_data):
+    def get_patients_by_therapist(self, validated_data, user=None):
         """Pacientes agrupados por terapeuta para una fecha dada."""
         query_date = validated_data.get("date")
 
@@ -65,6 +72,10 @@ class ReportService:
             .annotate(day=TruncDate("appointment_date"))
             .filter(day=query_date)
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            appointments = filter_by_tenant(appointments, user, field='reflexo')
 
         report = {}
         sin_terapeuta = {
@@ -114,38 +125,43 @@ class ReportService:
 
         return list(report.values())
 
-    def get_daily_cash(self, validated_data):
+    def get_daily_cash(self, validated_data, user=None):
         """Resumen diario de efectivo detallado por cita."""
         query_date = validated_data.get("date")
 
+        # Usar el mismo filtro de fecha que funciona en improved-daily-cash
         payments = (
             Appointment.objects
             .filter(
-                appointment_date=query_date,
+                appointment_date__date=query_date,
                 payment__isnull=False,
-                payment_type__isnull=False
+                payment__gt=0
             )
-            .values(
-                'id',
-                'payment',
-                'payment_type',
-                'payment_type__name'
-            )
-            .order_by('-id')
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            payments = filter_by_tenant(payments, user, field='reflexo')
+        
+        payments = payments.select_related('payment_type').values(
+            'id',
+            'payment',
+            'payment_type',
+            'payment_type__name'
+        ).order_by('-id')
 
         result = [
             {
                 "id_cita": p['id'],
                 "payment": p['payment'],
                 "payment_type": p['payment_type'],
-                "payment_type_name": p['payment_type__name']
+                "payment_type_name": p['payment_type__name'] or "No especificado"
             }
             for p in payments
         ]
         return result
 
-    def get_improved_daily_cash(self, validated_data):
+    def get_improved_daily_cash(self, validated_data, user=None):
         """
         Reporte mejorado de caja chica con información detallada de pagos.
         Incluye resumen por tipo de pago y totales.
@@ -160,21 +176,24 @@ class ReportService:
                 payment__isnull=False,
                 payment__gt=0
             )
-            .select_related('payment_type', 'patient', 'therapist')
-            .values(
-                'id',
-                'payment',
-                'payment_type__name',
-                'patient__name',
-                'patient__paternal_lastname',
-                'patient__maternal_lastname',
-                'therapist__first_name',
-                'therapist__last_name_paternal',
-                'therapist__last_name_maternal',
-                'ticket_number'
-            )
-            .order_by('-payment')
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            appointment_payments = filter_by_tenant(appointment_payments, user, field='reflexo')
+        
+        appointment_payments = appointment_payments.select_related('payment_type', 'patient', 'therapist').values(
+            'id',
+            'payment',
+            'payment_type__name',
+            'patient__name',
+            'patient__paternal_lastname',
+            'patient__maternal_lastname',
+            'therapist__first_name',
+            'therapist__last_name_paternal',
+            'therapist__last_name_maternal',
+            'ticket_number'
+        ).order_by('-payment')
 
         # Obtener pagos de tickets
         ticket_payments = (
@@ -184,21 +203,24 @@ class ReportService:
                 status='paid',
                 amount__gt=0
             )
-            .select_related('appointment__patient', 'appointment__therapist')
-            .values(
-                'id',
-                'amount',
-                'payment_method',
-                'ticket_number',
-                'appointment__patient__name',
-                'appointment__patient__paternal_lastname',
-                'appointment__patient__maternal_lastname',
-                'appointment__therapist__first_name',
-                'appointment__therapist__last_name_paternal',
-                'appointment__therapist__last_name_maternal'
-            )
-            .order_by('-amount')
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            ticket_payments = filter_by_tenant(ticket_payments, user, field='reflexo')
+        
+        ticket_payments = ticket_payments.select_related('appointment__patient', 'appointment__therapist').values(
+            'id',
+            'amount',
+            'payment_method',
+            'ticket_number',
+            'appointment__patient__name',
+            'appointment__patient__paternal_lastname',
+            'appointment__patient__maternal_lastname',
+            'appointment__therapist__first_name',
+            'appointment__therapist__last_name_paternal',
+            'appointment__therapist__last_name_maternal'
+        ).order_by('-amount')
 
         # Procesar pagos de citas
         appointment_data = []
@@ -268,7 +290,7 @@ class ReportService:
             "cantidad_total_pagos": len(all_payments)
         }
 
-    def get_daily_paid_tickets(self, validated_data):
+    def get_daily_paid_tickets(self, validated_data, user=None):
         """
         Reporte diario de todos los tickets PAGADOS.
         Incluye información detallada de cada ticket pagado.
@@ -283,34 +305,37 @@ class ReportService:
                 status='paid',
                 is_active=True
             )
-            .select_related(
-                'appointment__patient',
-                'appointment__therapist',
-                'appointment__payment_type'
-            )
-            .values(
-                'id',
-                'ticket_number',
-                'amount',
-                'payment_method',
-                'payment_date',
-                'description',
-                'appointment__id',
-                'appointment__appointment_date',
-                'appointment__hour',
-                'appointment__room',
-                'appointment__payment_type__name',
-                'appointment__patient__name',
-                'appointment__patient__paternal_lastname',
-                'appointment__patient__maternal_lastname',
-                'appointment__patient__document_number',
-                'appointment__patient__phone1',
-                'appointment__therapist__first_name',
-                'appointment__therapist__last_name_paternal',
-                'appointment__therapist__last_name_maternal'
-            )
-            .order_by('-payment_date')
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            paid_tickets = filter_by_tenant(paid_tickets, user, field='reflexo')
+        
+        paid_tickets = paid_tickets.select_related(
+            'appointment__patient',
+            'appointment__therapist',
+            'appointment__payment_type'
+        ).values(
+            'id',
+            'ticket_number',
+            'amount',
+            'payment_method',
+            'payment_date',
+            'description',
+            'appointment__id',
+            'appointment__appointment_date',
+            'appointment__hour',
+            'appointment__room',
+            'appointment__payment_type__name',
+            'appointment__patient__name',
+            'appointment__patient__paternal_lastname',
+            'appointment__patient__maternal_lastname',
+            'appointment__patient__document_number',
+            'appointment__patient__phone1',
+            'appointment__therapist__first_name',
+            'appointment__therapist__last_name_paternal',
+            'appointment__therapist__last_name_maternal'
+        ).order_by('-payment_date')
 
         # Procesar tickets pagados
         tickets_data = []
@@ -389,7 +414,7 @@ class ReportService:
             "metodos_pago_utilizados": list(payment_methods_summary.keys())
         }
 
-    def get_appointments_between_dates(self, validated_data):
+    def get_appointments_between_dates(self, validated_data, user=None):
         """Citas entre dos fechas dadas."""
         start_date = validated_data.get("start_date")
         end_date = validated_data.get("end_date")
@@ -401,8 +426,13 @@ class ReportService:
                 appointment_date__gte=start_date,
                 appointment_date__lte=end_date
             )
-            .order_by("appointment_date", "hour")
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            appointments = filter_by_tenant(appointments, user, field='reflexo')
+        
+        appointments = appointments.order_by("appointment_date", "hour")
 
         result = []
         for app in appointments:

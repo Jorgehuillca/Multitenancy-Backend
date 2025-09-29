@@ -98,7 +98,7 @@ class CustomUserAdmin(BaseUserAdmin):
             # BaseUserAdmin respeta esto; como USERNAME_FIELD es 'email',
             # basta con incluir 'email' aquí. Incluimos también 'user_name'
             # para capturarlo al crear el usuario.
-            "fields": ("email", "user_name", "password1", "password2"),
+            "fields": ("email", "user_name", "password1", "password2", "reflexo"),
         }),
     )
 

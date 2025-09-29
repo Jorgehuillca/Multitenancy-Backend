@@ -30,7 +30,8 @@ class DateParameterSerializer(serializers.Serializer):
 
 class TherapistAppointmentSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    name = serializers.CharField()  # 👈 SIN source, leerá 'name' del dict
+    reflexo_id = serializers.IntegerField()
+    name = serializers.CharField()  # Campo que viene del servicio
     # Si en tu BD hay nulos en apellidos, permite null / opcional
     last_name_paternal = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     last_name_maternal = serializers.CharField(required=False, allow_null=True, allow_blank=True)

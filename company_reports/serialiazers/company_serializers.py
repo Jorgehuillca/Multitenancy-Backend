@@ -14,7 +14,8 @@ class CompanyDataSerializer(serializers.ModelSerializer):
     def get_logo_url(self, obj):
         if not obj.company_logo:
             return None
-        return obj.company_logo
+        # Retornar la URL del archivo, no el objeto ImageFieldFile
+        return obj.company_logo.url if hasattr(obj.company_logo, 'url') else str(obj.company_logo)
 
     def get_has_logo(self, obj):
         return bool(obj.company_logo)
@@ -23,4 +24,5 @@ class CompanyDataSerializer(serializers.ModelSerializer):
         """Retorna la URL del logo."""
         if not obj.company_logo:
             return None
-        return obj.company_logo
+        # Retornar la URL del archivo, no el objeto ImageFieldFile
+        return obj.company_logo.url if hasattr(obj.company_logo, 'url') else str(obj.company_logo)

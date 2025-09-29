@@ -1,28 +1,34 @@
 from .patient import (
-    PatientListCreateView, 
+    PatientListAPIView,
+    PatientCreateAPIView, 
     PatientRetrieveUpdateDeleteView, 
     PatientSearchView
 )
 from .diagnosis import (
-    DiagnosisListCreateAPIView, 
+    DiagnosisListAPIView,
+    DiagnosisCreateAPIView, 
     DiagnosisRetrieveUpdateDestroyAPIView, 
     DiagnosisSearchAPIView
 )
 from .medical_record import (
-    MedicalRecordListCreateAPIView, 
+    MedicalRecordListAPIView,
+    MedicalRecordCreateAPIView, 
     MedicalRecordRetrieveUpdateDestroyAPIView,
     PatientMedicalHistoryAPIView,
     DiagnosisStatisticsAPIView
 )
 
 __all__ = [
-    'PatientListCreateView', 
+    'PatientListAPIView',
+    'PatientCreateAPIView', 
     'PatientRetrieveUpdateDeleteView', 
     'PatientSearchView',
-    'DiagnosisListCreateAPIView', 
+    'DiagnosisListAPIView',
+    'DiagnosisCreateAPIView', 
     'DiagnosisRetrieveUpdateDestroyAPIView', 
     'DiagnosisSearchAPIView',
-    'MedicalRecordListCreateAPIView', 
+    'MedicalRecordListAPIView',
+    'MedicalRecordCreateAPIView', 
     'MedicalRecordRetrieveUpdateDestroyAPIView',
     'PatientMedicalHistoryAPIView',
     'DiagnosisStatisticsAPIView'

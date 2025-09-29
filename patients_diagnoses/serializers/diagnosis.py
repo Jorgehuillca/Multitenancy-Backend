@@ -9,7 +9,7 @@ class DiagnosisSerializer(serializers.ModelSerializer):
     por compatibilidad cuando existan valores legacy.
     """
     # Tenant (legacy/compatibilidad): solo lectura
-    reflexo_id = serializers.IntegerField(source='reflexo_id', read_only=True, required=False)
+    reflexo_id = serializers.IntegerField(read_only=True, required=False)
     reflexo_name = serializers.CharField(source='reflexo.name', read_only=True, required=False)
 
     class Meta:

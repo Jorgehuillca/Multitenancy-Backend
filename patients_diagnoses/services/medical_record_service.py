@@ -138,21 +138,23 @@ class MedicalRecordService:
                     ).get(pk=patient_id)
                 except Patient.DoesNotExist:
                     return None, {'patient_id': 'Paciente no pertenece a tu empresa'}
+                # Los diagnósticos son globales (reflexo_id: null), no necesitan validación de tenant
+                # Solo verificar que existe y está activo
                 try:
-                    filter_by_tenant(
-                        Diagnosis.objects.filter(deleted_at__isnull=True),
-                        user,
-                        field='reflexo'
-                    ).get(pk=diagnose_id)
+                    Diagnosis.objects.filter(deleted_at__isnull=True).get(pk=diagnose_id)
                 except Diagnosis.DoesNotExist:
-                    return None, {'diagnose_id': 'Diagnóstico no pertenece a tu empresa'}
+                    return None, {'diagnose_id': 'Diagnóstico no existe o está eliminado'}
 
         # Validación de coherencia y presencia de tenant:
         p_tid = patient_obj.reflexo_id
         d_tid = diagnose_obj.reflexo_id
-        if p_tid is None or d_tid is None:
-            return None, {'non_field_errors': 'Paciente y diagnóstico deben pertenecer a una empresa (tenant) válida.'}
-        if p_tid != d_tid:
+        
+        # Los diagnósticos son globales (d_tid puede ser null), solo validar el paciente
+        if p_tid is None:
+            return None, {'non_field_errors': 'El paciente debe pertenecer a una empresa (tenant) válida.'}
+        
+        # Si el diagnóstico tiene tenant, debe coincidir con el paciente
+        if d_tid is not None and p_tid != d_tid:
             return None, {'non_field_errors': 'Paciente y diagnóstico pertenecen a diferentes empresas (tenant).'}
 
         # Asegurar que el registro quede asociado al tenant del paciente (o al explícito ya validado)

@@ -4,17 +4,8 @@ from django.db import models
 class AppointmentStatus(models.Model):
     """
     Modelo para gestionar los estados de las citas médicas.
-    Basado en la estructura del módulo Laravel 05_appointments_status.
+    GLOBAL: Los estados de citas son compartidos entre todas las empresas.
     """
-    
-    #Multitenant
-    reflexo = models.ForeignKey(
-        'reflexo.Reflexo',
-        on_delete=models.CASCADE, 
-        related_name='+',
-        null=True,      # permite que sea vacío temporalmente
-        blank=True      # permite que el formulario del admin lo deje vacío
-    )
     
     name = models.CharField(
         max_length=50,
@@ -40,24 +31,24 @@ class AppointmentStatus(models.Model):
             models.Index(fields=['name']),
         ]
         constraints = [
-            models.UniqueConstraint(fields=['reflexo', 'name'], name='uniq_appt_status_per_reflexo_name')
+            models.UniqueConstraint(fields=['name'], name='uniq_appt_status_name')
         ]
     
     def __str__(self):
         return self.name
     
     def clean(self):
-        """Evita duplicados por (reflexo, name) con mensaje amigable en Admin.
+        """Evita duplicados por nombre con mensaje amigable en Admin.
         La restricción de BD ya existe; esto mejora el feedback del formulario.
         """
-        if self.reflexo_id is None or not self.name:
+        if not self.name:
             return
-        qs = AppointmentStatus.objects.filter(reflexo_id=self.reflexo_id, name__iexact=self.name)
+        qs = AppointmentStatus.objects.filter(name__iexact=self.name)
         if self.pk:
             qs = qs.exclude(pk=self.pk)
         if qs.exists():
             from django.core.exceptions import ValidationError
-            raise ValidationError({'name': ['Ya existe un estado con este nombre en esta empresa (tenant).']})
+            raise ValidationError({'name': ['Ya existe un estado con este nombre.']})
     
     @property
     def appointments_count(self):

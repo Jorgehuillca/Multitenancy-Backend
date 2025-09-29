@@ -2,6 +2,7 @@ import json
 from django.http import JsonResponse, HttpResponseNotAllowed
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
 from ..models.history import History
@@ -11,21 +12,44 @@ from patients_diagnoses.models.patient import Patient
 
 @csrf_exempt
 @api_view(["GET"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
-def histories_list(request):
+def histories_list(request, pk=None):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
     
+    # Si se proporciona pk, devolver un historial específico
+    if pk is not None:
+        try:
+            base = History.objects.filter(deleted_at__isnull=True).select_related("patient")
+            if not is_global_admin(request.user):
+                base = filter_by_tenant(base, request.user, field='reflexo')
+            h = base.get(pk=pk)
+            return JsonResponse({
+                "id": h.id,
+                "local_id": getattr(h, 'local_id', None),
+                "patient": h.patient_id,
+                "patient_name": f"{h.patient.name} {h.patient.paternal_lastname}" if h.patient else None,
+                "reflexo_id": getattr(h, 'reflexo_id', None),
+                "testimony": h.testimony,
+                "private_observation": h.private_observation,
+                "observation": h.observation,
+                "height": float(h.height) if h.height is not None else None,
+                "weight": float(h.weight) if h.weight is not None else None,
+                "last_weight": float(h.last_weight) if h.last_weight is not None else None,
+                "menstruation": h.menstruation,
+                "diu_type": h.diu_type,
+                "gestation": h.gestation,
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+                "updated_at": h.updated_at.isoformat() if h.updated_at else None
+            })
+        except History.DoesNotExist:
+            return JsonResponse({"error": "No encontrado"}, status=404)
+    
     # Aislamiento por tenant
     qs = History.objects.filter(deleted_at__isnull=True).select_related("patient")
-    # Bypass para admins globales o staff
-    try:
-        if is_global_admin(request.user) or getattr(request.user, 'is_staff', False):
-            pass  # ver todo
-        else:
-            qs = filter_by_tenant(qs, request.user, field='reflexo')
-    except Exception:
+    # Bypass solo para admins globales
+    if not is_global_admin(request.user):
         qs = filter_by_tenant(qs, request.user, field='reflexo')
 
     data = [{
@@ -39,7 +63,7 @@ def histories_list(request):
 
 @csrf_exempt
 @api_view(["POST"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def history_create(request):
     if request.method != "POST":
@@ -114,7 +138,7 @@ def history_create(request):
 
 @csrf_exempt
 @api_view(["PUT", "PATCH"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def history_update(request, pk):
     """Actualizar historial (PUT/PATCH)"""
@@ -187,7 +211,7 @@ def history_update(request, pk):
 
 @csrf_exempt
 @api_view(["DELETE", "POST"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def history_delete(request, pk):
     # Support DELETE as the canonical method; keep POST for backward compatibility

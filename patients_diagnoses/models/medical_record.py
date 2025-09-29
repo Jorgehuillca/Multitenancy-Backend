@@ -62,3 +62,25 @@ class MedicalRecord(models.Model):
     
     def __str__(self):
         return f"{self.patient} - {self.diagnose} ({self.diagnosis_date})"
+
+    def clean(self):
+        """Alinear tenant con el paciente y validar coherencia multitenant."""
+        from django.core.exceptions import ValidationError
+
+        if self.patient_id is None:
+            return
+
+        patient_reflexo_id = getattr(self.patient, 'reflexo_id', None)
+
+        # Autocompletar tenant desde el paciente si falta
+        if self.reflexo_id is None and patient_reflexo_id is not None:
+            self.reflexo_id = patient_reflexo_id
+
+        # Si ambos existen, deben coincidir
+        if self.reflexo_id is not None and patient_reflexo_id is not None and self.reflexo_id != patient_reflexo_id:
+            raise ValidationError({'reflexo': 'El historial debe pertenecer al mismo tenant que el paciente.'})
+
+    def save(self, *args, **kwargs):
+        # Garantizar validaciones siempre (Admin y API)
+        self.full_clean()
+        return super().save(*args, **kwargs)

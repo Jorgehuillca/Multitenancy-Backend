@@ -1,49 +1,58 @@
 from django.db.models import Count, Sum, Avg, Q, Case, When, F, Value
 from django.db.models.functions import ExtractWeekDay, Concat
 from appointments_status.models.appointment import Appointment
+from architect.utils.tenant import filter_by_tenant, get_tenant, is_global_admin
 
 class StatisticsService:
-    def get_metricas_principales(self, start, end):
-        return Appointment.objects.filter(
+    def get_metricas_principales(self, start, end, user=None):
+        qs = Appointment.objects.filter(
             appointment_date__range=[start, end]
-        ).aggregate(
+        )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        return qs.aggregate(
             ttlpacientes=Count("patient", distinct=True),
             ttlsesiones=Count("id"),
             ttlganancias=Sum("payment")
         )
 
-    def get_tipos_de_pago(self, start, end):
-        pagos = (
-            Appointment.objects
-            .filter(
-                appointment_date__range=[start, end]
-            )
-            .values("payment_type__name")
-            .annotate(usos=Count("id"))
+    def get_tipos_de_pago(self, start, end, user=None):
+        qs = Appointment.objects.filter(
+            appointment_date__range=[start, end]
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        pagos = qs.values("payment_type__name").annotate(usos=Count("id"))
         return {(p["payment_type__name"] or "Sin tipo"): p["usos"] for p in pagos}
 
-    def get_rendimiento_terapeutas(self, start, end):
+    def get_rendimiento_terapeutas(self, start, end, user=None):
         # 1. Consulta base: sesiones e ingresos por terapeuta 
-        stats = list(
-            Appointment.objects
-            .filter(
-                appointment_date__range=[start, end]
-            )
-            .values("therapist__id")
-            .annotate(
-                # Formato de nombre  "Apellido1 Apellido2, Nombre"
-                terapeuta=Concat(
-                    'therapist__last_name_paternal',
-                    Value(' '),
-                    'therapist__last_name_maternal', 
-                    Value(', '),
-                    'therapist__first_name'
-                ),
-                sesiones=Count("id"),
-                ingresos=Sum("payment")
-            )
+        qs = Appointment.objects.filter(
+            appointment_date__range=[start, end]
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        stats = list(qs.values("therapist__id").annotate(
+            # Formato de nombre  "Apellido1 Apellido2, Nombre"
+            terapeuta=Concat(
+                'therapist__last_name_paternal',
+                Value(' '),
+                'therapist__last_name_maternal', 
+                Value(', '),
+                'therapist__first_name'
+            ),
+            sesiones=Count("id"),
+            ingresos=Sum("payment")
+        ))
         
         if not stats:
             return []
@@ -88,7 +97,7 @@ class StatisticsService:
         
         return resultado
 
-    def get_ingresos_por_dia_semana(self, start, end):
+    def get_ingresos_por_dia_semana(self, start, end, user=None):
         
         dias_semana = {
             1: "Domingo",       
@@ -100,16 +109,15 @@ class StatisticsService:
             7: "Sabado"     
         }
         
-        ingresos_raw = (
-            Appointment.objects
-            .filter(
-                appointment_date__range=[start, end]
-            )
-            .annotate(dia_semana=ExtractWeekDay("appointment_date"))
-            .values("dia_semana")
-            .annotate(total=Sum("payment"))  
-            .order_by("dia_semana")
+        qs = Appointment.objects.filter(
+            appointment_date__range=[start, end]
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        ingresos_raw = qs.annotate(dia_semana=ExtractWeekDay("appointment_date")).values("dia_semana").annotate(total=Sum("payment")).order_by("dia_semana")
         
         
         resultado = {}
@@ -119,22 +127,21 @@ class StatisticsService:
         
         return resultado
 
-    def get_sesiones_por_dia_semana(self, start, end):
+    def get_sesiones_por_dia_semana(self, start, end, user=None):
         dias_semana = {
             1: "Domingo", 2: "Lunes", 3: "Martes", 4: "Miercoles",
             5: "Jueves", 6: "Viernes", 7: "Sabado"
         }
         
-        sesiones_raw = (
-            Appointment.objects
-            .filter(
-                appointment_date__range=[start, end]
-            )
-            .annotate(dia_semana=ExtractWeekDay("appointment_date"))
-            .values("dia_semana")
-            .annotate(sesiones=Count("id"))
-            .order_by("dia_semana")
+        qs = Appointment.objects.filter(
+            appointment_date__range=[start, end]
         )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        sesiones_raw = qs.annotate(dia_semana=ExtractWeekDay("appointment_date")).values("dia_semana").annotate(sesiones=Count("id")).order_by("dia_semana")
         
         resultado = {}
         for item in sesiones_raw:
@@ -143,20 +150,26 @@ class StatisticsService:
         
         return resultado
 
-    def get_tipos_pacientes(self, start, end):
-        return Appointment.objects.filter(
+    def get_tipos_pacientes(self, start, end, user=None):
+        qs = Appointment.objects.filter(
             appointment_date__range=[start, end]
-        ).aggregate(
+        )
+        
+        # Aplicar filtrado por tenant si se proporciona usuario
+        if user:
+            qs = filter_by_tenant(qs, user, field='reflexo')
+        
+        return qs.aggregate(
             c=Count("id", filter=Q(appointment_status__iexact="C")),
             cc=Count("id", filter=Q(appointment_status__iexact="CC"))
         )
 
-    def get_statistics(self, start, end):
+    def get_statistics(self, start, end, user=None):
         return {
-            "terapeutas": self.get_rendimiento_terapeutas(start, end),
-            "tipos_pago": self.get_tipos_de_pago(start, end),
-            "metricas": self.get_metricas_principales(start, end),
-            "ingresos": self.get_ingresos_por_dia_semana(start, end),
-            "sesiones": self.get_sesiones_por_dia_semana(start, end),
-            "tipos_pacientes": self.get_tipos_pacientes(start, end),
+            "terapeutas": self.get_rendimiento_terapeutas(start, end, user),
+            "tipos_pago": self.get_tipos_de_pago(start, end, user),
+            "metricas": self.get_metricas_principales(start, end, user),
+            "ingresos": self.get_ingresos_por_dia_semana(start, end, user),
+            "sesiones": self.get_sesiones_por_dia_semana(start, end, user),
+            "tipos_pacientes": self.get_tipos_pacientes(start, end, user),
         }

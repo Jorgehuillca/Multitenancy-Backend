@@ -2,13 +2,12 @@
 from rest_framework.viewsets import ReadOnlyModelViewSet
 from ubi_geo.models.province import Province
 from ubi_geo.serializers.province import ProvinceSerializer
-from architect.utils.tenant import filter_by_tenant_including_global
 
 
 class ProvinceViewSet(ReadOnlyModelViewSet):
     """
-    GET /api/provinces/                 -> lista (se puede filtrar)
-    GET /api/provinces/{id}/            -> detalle
+    GET /api/locations/provinces/                 -> lista (se puede filtrar)
+    GET /api/locations/provinces/{id}/            -> detalle
 
     Filtros por querystring:
       - ?region=<id>            -> provincias de esa región
@@ -17,7 +16,6 @@ class ProvinceViewSet(ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = Province.objects.select_related("region").filter(deleted_at__isnull=True).order_by("name")
-        qs = filter_by_tenant_including_global(qs, self.request.user, field='reflexo')
         region_id = self.request.query_params.get("region")
         if region_id:
             # Aceptar formatos como "{2}" o " 2 "

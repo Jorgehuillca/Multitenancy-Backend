@@ -90,7 +90,7 @@ class User(AbstractUser):
         verbose_name_plural = 'Usuarios'
 
     def __str__(self):
-        return f"{self.name} {self.paternal_lastname} - {self.document_number}"
+        return self.user_name or self.email
 
     def soft_delete(self):
         self.deleted_at = timezone.now()

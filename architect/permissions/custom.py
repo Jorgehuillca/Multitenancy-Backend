@@ -6,7 +6,14 @@ class IsAdminUser(permissions.BasePermission):
     Permiso personalizado para usuarios administradores
     """
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.rol == 'Admin'
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        # Superusers siempre pasan
+        if getattr(user, 'is_superuser', False):
+            return True
+        # Compat: algunos usuarios no tienen atributo 'rol'
+        return getattr(user, 'rol', None) == 'Admin'
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):

@@ -220,6 +220,52 @@ class AppointmentService:
             except ValueError:
                 return Response({'error': 'Formato inválido de appointment_date u hour. Use YYYY-MM-DD y HH:MM.'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Resolver campos ForeignKey que vienen como ID
+            if 'appointment_status' in payload:
+                try:
+                    from ..models import AppointmentStatus
+                    status_id = payload['appointment_status']
+                    if isinstance(status_id, (int, str)):
+                        status_obj = AppointmentStatus.objects.get(pk=int(status_id))
+                        payload['appointment_status_id'] = status_obj.id
+                        payload.pop('appointment_status', None)
+                except (AppointmentStatus.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Estado de cita no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Resolver patient si viene como ID (adicional al procesamiento existente)
+            if 'patient' in payload and 'patient_id' not in payload:
+                try:
+                    patient_id = payload['patient']
+                    if isinstance(patient_id, (int, str)):
+                        patient_obj = Patient.objects.get(pk=int(patient_id))
+                        payload['patient_id'] = patient_obj.id
+                        payload.pop('patient', None)
+                except (Patient.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Paciente no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Resolver therapist si viene como ID (adicional al procesamiento existente)
+            if 'therapist' in payload and 'therapist_id' not in payload:
+                try:
+                    therapist_id = payload['therapist']
+                    if isinstance(therapist_id, (int, str)) and therapist_id is not None:
+                        therapist_obj = Therapist.objects.get(pk=int(therapist_id))
+                        payload['therapist_id'] = therapist_obj.id
+                        payload.pop('therapist', None)
+                except (Therapist.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Terapeuta no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Resolver reflexo si viene como ID (adicional al procesamiento existente)
+            if 'reflexo' in payload and 'reflexo_id' not in payload:
+                try:
+                    from reflexo.models import Reflexo
+                    reflexo_id = payload['reflexo']
+                    if isinstance(reflexo_id, (int, str)) and reflexo_id is not None:
+                        reflexo_obj = Reflexo.objects.get(pk=int(reflexo_id))
+                        payload['reflexo_id'] = reflexo_obj.id
+                        payload.pop('reflexo', None)
+                except (Reflexo.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Reflexo no válido'}, status=status.HTTP_400_BAD_REQUEST)
+
             # Crear la cita con local_id secuencial por tenant
             from django.db.models import Max
             # Nota: estamos dentro de @transaction.atomic
@@ -297,8 +343,59 @@ class AppointmentService:
         try:
             appointment = Appointment.objects.get(id=appointment_id, deleted_at__isnull=True)
             
+            # Procesar campos ForeignKey que vienen como ID
+            update_data = dict(data)
+            
+            # Procesar appointment_status si viene como ID
+            if 'appointment_status' in update_data:
+                try:
+                    from ..models import AppointmentStatus
+                    status_id = update_data['appointment_status']
+                    if isinstance(status_id, (int, str)):
+                        status_obj = AppointmentStatus.objects.get(pk=int(status_id))
+                        update_data['appointment_status_id'] = status_obj.id
+                        update_data.pop('appointment_status', None)
+                except (AppointmentStatus.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Estado de cita no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Procesar patient si viene como ID
+            if 'patient' in update_data:
+                try:
+                    from patients_diagnoses.models import Patient
+                    patient_id = update_data['patient']
+                    if isinstance(patient_id, (int, str)):
+                        patient_obj = Patient.objects.get(pk=int(patient_id))
+                        update_data['patient_id'] = patient_obj.id
+                        update_data.pop('patient', None)
+                except (Patient.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Paciente no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Procesar therapist si viene como ID
+            if 'therapist' in update_data:
+                try:
+                    from therapists.models import Therapist
+                    therapist_id = update_data['therapist']
+                    if isinstance(therapist_id, (int, str)) and therapist_id is not None:
+                        therapist_obj = Therapist.objects.get(pk=int(therapist_id))
+                        update_data['therapist_id'] = therapist_obj.id
+                        update_data.pop('therapist', None)
+                except (Therapist.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Terapeuta no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Procesar reflexo si viene como ID
+            if 'reflexo' in update_data:
+                try:
+                    from reflexo.models import Reflexo
+                    reflexo_id = update_data['reflexo']
+                    if isinstance(reflexo_id, (int, str)) and reflexo_id is not None:
+                        reflexo_obj = Reflexo.objects.get(pk=int(reflexo_id))
+                        update_data['reflexo_id'] = reflexo_obj.id
+                        update_data.pop('reflexo', None)
+                except (Reflexo.DoesNotExist, ValueError, TypeError):
+                    return Response({'error': 'Reflexo no válido'}, status=status.HTTP_400_BAD_REQUEST)
+            
             # Actualizar campos
-            for field, value in data.items():
+            for field, value in update_data.items():
                 if hasattr(appointment, field):
                     setattr(appointment, field, value)
             
@@ -475,10 +572,15 @@ class AppointmentService:
         """
         try:
             # Solo citas con estado COMPLETADO
-            queryset = Appointment.objects.filter(
-                appointment_status__iexact='COMPLETADO',
-                deleted_at__isnull=True
-            )
+            # Buscar el AppointmentStatus con nombre "Completa" o similar
+            from ..models import AppointmentStatus
+            completed_status = AppointmentStatus.objects.filter(
+                name__iexact='completa'
+            ).first()
+            
+            queryset = Appointment.objects.filter(deleted_at__isnull=True)
+            if completed_status:
+                queryset = queryset.filter(appointment_status=completed_status)
             if tenant_id:
                 queryset = queryset.filter(reflexo_id=tenant_id)
             
@@ -516,10 +618,15 @@ class AppointmentService:
         """
         try:
             # Solo citas con estado PENDIENTE
-            queryset = Appointment.objects.filter(
-                appointment_status__iexact='PENDIENTE',
-                deleted_at__isnull=True
-            )
+            # Buscar el AppointmentStatus con nombre "En espera" o similar
+            from ..models import AppointmentStatus
+            pending_status = AppointmentStatus.objects.filter(
+                name__iexact='en espera'
+            ).first()
+            
+            queryset = Appointment.objects.filter(deleted_at__isnull=True)
+            if pending_status:
+                queryset = queryset.filter(appointment_status=pending_status)
             if tenant_id:
                 queryset = queryset.filter(reflexo_id=tenant_id)
             

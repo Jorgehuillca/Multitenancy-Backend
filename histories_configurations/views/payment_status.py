@@ -4,9 +4,22 @@ from django.views.decorators.csrf import csrf_exempt
 from ..models import PaymentStatus
 
 @csrf_exempt
-def payment_statuses_list(request):
+def payment_statuses_list(request, pk=None):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
+    
+    # Si se proporciona pk, devolver un estado específico
+    if pk is not None:
+        try:
+            ps = PaymentStatus.objects.get(pk=pk)
+            return JsonResponse({
+                "id": ps.id,
+                "name": ps.name,
+                "description": ps.description
+            })
+        except PaymentStatus.DoesNotExist:
+            return JsonResponse({"error": "No encontrado"}, status=404)
+    
     # Global: no multitenant constraint for PaymentStatus
     qs = PaymentStatus.objects.all()
     data = [{"id": x.id, "name": x.name, "description": x.description} for x in qs]

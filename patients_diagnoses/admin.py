@@ -220,3 +220,12 @@ class MedicalRecordAdmin(BaseTenantAdmin):
             # Importante: delegar a super() para que Django aplique raw_id_fields
             return super().formfield_for_foreignkey(db_field, request, **kwargs)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        """Alinear automáticamente el tenant del historial con el del paciente seleccionado."""
+        try:
+            if obj.patient_id and getattr(obj.patient, 'reflexo_id', None) is not None:
+                obj.reflexo_id = obj.patient.reflexo_id
+        except Exception:
+            pass
+        super().save_model(request, obj, form, change)

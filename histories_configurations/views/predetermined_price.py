@@ -3,24 +3,41 @@ from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from ..models.predetermined_price import PredeterminedPrice
 from architect.utils.tenant import get_tenant, filter_by_tenant, is_global_admin
 
 @csrf_exempt
 @api_view(["GET"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
-def predetermined_prices_list(request):
+def predetermined_prices_list(request, pk=None):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
+
+    # Si se proporciona pk, devolver un precio específico
+    if pk is not None:
+        try:
+            base = PredeterminedPrice.objects.filter(deleted_at__isnull=True)
+            if not is_global_admin(request.user):
+                base = filter_by_tenant(base, request.user, field='reflexo')
+            p = base.get(pk=pk)
+            return JsonResponse({
+                "id": p.id,
+                "name": p.name,
+                "price": str(p.price),
+                "reflexo_id": p.reflexo_id,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None
+            })
+        except PredeterminedPrice.DoesNotExist:
+            return JsonResponse({"error": "No encontrado"}, status=404)
 
     # Aislamiento por tenant (admins globales ven todo)
     qs = PredeterminedPrice.objects.filter(deleted_at__isnull=True)
     try:
-        if is_global_admin(request.user) or getattr(request.user, 'is_staff', False):
-            pass
-        else:
+        if not is_global_admin(request.user):
             qs = filter_by_tenant(qs, request.user, field='reflexo')
     except Exception:
         qs = filter_by_tenant(qs, request.user, field='reflexo')
@@ -35,7 +52,7 @@ def predetermined_prices_list(request):
 
 @csrf_exempt
 @api_view(["POST"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def predetermined_price_create(request):
     if request.method != "POST":
@@ -52,7 +69,7 @@ def predetermined_price_create(request):
         return JsonResponse({"error": "Campos obligatorios faltantes"}, status=400)
 
     # Determinar tenant según rol
-    if is_global_admin(request.user) or getattr(request.user, 'is_staff', False):
+    if is_global_admin(request.user):
         tenant_id = payload.get('reflexo_id') or payload.get('reflexo')
         if tenant_id is None:
             return JsonResponse({"error": "Admin debe especificar reflexo_id"}, status=400)
@@ -71,7 +88,7 @@ def predetermined_price_create(request):
 
 @csrf_exempt
 @api_view(["PUT", "PATCH", "POST"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def predetermined_price_update(request, pk):
     if request.method not in ["PUT", "PATCH", "POST"]:
@@ -84,7 +101,7 @@ def predetermined_price_update(request, pk):
 
     try:
         base = PredeterminedPrice.objects.filter(deleted_at__isnull=True)
-        if not (is_global_admin(request.user) or getattr(request.user, 'is_staff', False)):
+        if not is_global_admin(request.user):
             base = filter_by_tenant(base, request.user, field='reflexo')
         p = base.get(pk=pk)
     except PredeterminedPrice.DoesNotExist:
@@ -115,7 +132,7 @@ def predetermined_price_update(request, pk):
 
 @csrf_exempt
 @api_view(["DELETE", "POST"])
-@authentication_classes([SessionAuthentication, BasicAuthentication])
+@authentication_classes([JWTAuthentication, SessionAuthentication, BasicAuthentication])
 @permission_classes([IsAuthenticated])
 def predetermined_price_delete(request, pk):
     if request.method not in ["DELETE", "POST"]:
@@ -123,7 +140,7 @@ def predetermined_price_delete(request, pk):
 
     # Alcance por tenant (si aplica); eliminar definitivamente
     base = PredeterminedPrice.objects.all()
-    if not (is_global_admin(request.user) or getattr(request.user, 'is_staff', False)):
+    if not is_global_admin(request.user):
         base = filter_by_tenant(base, request.user, field='reflexo')
     try:
         p = base.get(pk=pk)

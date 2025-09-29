@@ -5,9 +5,23 @@ from ..models.document_type import DocumentType
 from architect.utils.tenant import get_tenant, is_global_admin
 
 @csrf_exempt
-def document_types_list(request):
+def document_types_list(request, pk=None):
     if request.method != "GET":
         return HttpResponseNotAllowed(["GET"])
+    
+    # Si se proporciona pk, devolver un tipo específico
+    if pk is not None:
+        try:
+            dt = DocumentType.objects.get(pk=pk, deleted_at__isnull=True)
+            return JsonResponse({
+                "id": dt.id,
+                "name": dt.name,
+                "created_at": dt.created_at.isoformat() if dt.created_at else None,
+                "updated_at": dt.updated_at.isoformat() if dt.updated_at else None
+            })
+        except DocumentType.DoesNotExist:
+            return JsonResponse({"error": "No encontrado"}, status=404)
+    
     # Global: no filtrar por tenant
     qs = DocumentType.objects.filter(deleted_at__isnull=True)
     data = [{"id": x.id, "name": x.name} for x in qs]

@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from ..permissions.custom import IsAdminUser
 from ..serializers.user import UserSerializer
 from django.contrib.auth import get_user_model
 
@@ -15,35 +16,19 @@ class UserListView(APIView):
     - Usuarios staff: Solo pueden ver su propio perfil
     - Usuarios normales: Acceso denegado
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
-        user = request.user
-        
-        # Solo superusuarios pueden ver todos los usuarios
-        if user.is_superuser:
-            users = User.objects.all()
-            serializer = UserSerializer(users, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        # Usuarios staff solo pueden ver su propio perfil
-        elif user.is_staff:
-            serializer = UserSerializer(user)
-            return Response([serializer.data], status=status.HTTP_200_OK)
-        
-        # Usuarios normales no tienen acceso
-        else:
-            return Response(
-                {"error": "No tienes permisos para acceder a esta información"}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class UserCreateView(APIView):
     """Crea usuario (POST /api/architect/users/create/)
     Requiere autenticación. (Se mantiene la lógica actual sin checks extra)
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
         serializer = UserSerializer(data=request.data, context={"request": request})
@@ -59,7 +44,7 @@ class UserEditView(APIView):
     PUT = actualización completa
     PATCH = actualización parcial
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def put(self, request, pk):
         try:
@@ -95,13 +80,10 @@ class AdminUserDeleteView(APIView):
     - Efecto: hard delete (delete()), no queda rastro en Admin ni en DB.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def delete(self, request, pk):
-        # Verificar permisos de admin
         current = request.user
-        if not (getattr(current, 'is_superuser', False) or getattr(current, 'is_staff', False)):
-            return Response({"error": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
 
         # Obtener usuario objetivo
         try:

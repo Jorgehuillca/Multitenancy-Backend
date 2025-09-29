@@ -1,5 +1,6 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from rest_framework.decorators import api_view
 from ..models.diagnosis import Diagnosis 
@@ -11,9 +12,10 @@ from ..services.diagnosis_service import DiagnosisService
 
 diagnosis_service = DiagnosisService()
 
-class DiagnosisListCreateAPIView(generics.ListCreateAPIView):
+class DiagnosisListAPIView(generics.ListAPIView):
     queryset = Diagnosis.objects.filter(deleted_at__isnull=True)
     serializer_class = DiagnosisSerializer
+    permission_classes = [IsAuthenticated]
     
     def list(self, request, *args, **kwargs):
         # Parámetros de paginación
@@ -30,6 +32,11 @@ class DiagnosisListCreateAPIView(generics.ListCreateAPIView):
             "current_page": result['current_page'],
             "results": result['diagnoses'],
         })
+
+class DiagnosisCreateAPIView(generics.CreateAPIView):
+    queryset = Diagnosis.objects.filter(deleted_at__isnull=True)
+    serializer_class = DiagnosisSerializer
+    permission_classes = [IsAuthenticated]
     
     def create(self, request, *args, **kwargs):
         diagnosis_data, errors = diagnosis_service.create_diagnosis(request.data)
@@ -42,6 +49,7 @@ class DiagnosisListCreateAPIView(generics.ListCreateAPIView):
 class DiagnosisRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Diagnosis.objects.filter(deleted_at__isnull=True)
     serializer_class = DiagnosisSerializer
+    permission_classes = [IsAuthenticated]
 
     def retrieve(self, request, *args, **kwargs):
         diagnosis_data = diagnosis_service.get_diagnosis_by_id(kwargs['pk'])
@@ -71,6 +79,8 @@ class DiagnosisRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIVie
     
     
 class DiagnosisSearchAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         query = request.GET.get('q', '').strip()
         if not query:

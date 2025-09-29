@@ -50,15 +50,15 @@ class BaseTenantAdmin(admin.ModelAdmin):
 
 
 @admin.register(AppointmentStatus)
-class AppointmentStatusAdmin(BaseTenantAdmin):
+class AppointmentStatusAdmin(admin.ModelAdmin):
     """
     Configuración del admin para AppointmentStatus.
+    GLOBAL: No usa filtrado por tenant.
     """
     list_display = ['name', 'description', 'appointments_count', 'created_at']
     list_filter = ['created_at', 'updated_at', 'deleted_at']
     search_fields = ['name', 'description']
-    # readonly_fields dinámicos + 'appointments_count'
-    readonly_fields = ['appointments_count']
+    readonly_fields = ['appointments_count', 'created_at', 'updated_at', 'deleted_at']
     ordering = ['name']
 
     fieldsets = (
@@ -145,7 +145,7 @@ class AppointmentAdmin(BaseTenantAdmin):
     ]
     search_fields = ['local_id', 'ailments', 'diagnosis', 'observation', 'ticket_number']
     readonly_fields = ['is_completed', 'is_pending', 'created_at', 'updated_at', 'deleted_at']
-    ordering = ['reflexo_id', 'local_id', '-appointment_date', '-hour']
+    ordering = ['-appointment_date', '-hour']
 
     # 👇 según prefieras
     raw_id_fields = ['patient', 'therapist', 'history']
@@ -221,7 +221,8 @@ class AppointmentAdmin(BaseTenantAdmin):
                 from histories_configurations.models import History
                 kwargs['queryset'] = History.objects.filter(reflexo_id=tenant_id)
             elif db_field.name == 'appointment_status':
-                kwargs['queryset'] = AppointmentStatus.objects.filter(reflexo_id=tenant_id)
+                # AppointmentStatus es global, no filtrar por tenant
+                kwargs['queryset'] = AppointmentStatus.objects.all()
             elif db_field.name == 'reflexo':
                 from reflexo.models import Reflexo
                 kwargs['queryset'] = Reflexo.objects.filter(id=tenant_id)

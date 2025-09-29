@@ -8,7 +8,7 @@ from architect.utils.tenant import filter_by_tenant
 
 medical_record_service = MedicalRecordService()
 
-class MedicalRecordListCreateAPIView(generics.ListCreateAPIView):
+class MedicalRecordListAPIView(generics.ListAPIView):
     serializer_class = MedicalRecordSerializer
     
     def get_queryset(self):
@@ -43,6 +43,9 @@ class MedicalRecordListCreateAPIView(generics.ListCreateAPIView):
             "current_page": result['current_page'],
             "results": result['medical_records'],
         })
+
+class MedicalRecordCreateAPIView(generics.CreateAPIView):
+    serializer_class = MedicalRecordSerializer
     
     def create(self, request, *args, **kwargs):
         record_data, errors = medical_record_service.create_medical_record(request.data, user=request.user)
