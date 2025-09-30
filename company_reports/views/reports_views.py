@@ -14,6 +14,9 @@ from django.shortcuts import render
 from django.template import TemplateDoesNotExist
 # from django_xhtml2pdf.utils import pdf_decorator
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 import xlsxwriter
 import io
 import json
@@ -545,6 +548,9 @@ excel_export = ExcelExportView()
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # Asegura Request DRF y autenticación JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_number_appointments_per_therapist(request):
     try:
         return report_api.get_number_appointments_per_therapist(request)
@@ -560,6 +566,9 @@ def get_number_appointments_per_therapist(request):
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_patients_by_therapist(request):
     try:
         return report_api.get_patients_by_therapist(request)
@@ -575,6 +584,9 @@ def get_patients_by_therapist(request):
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_daily_cash(request):
     try:
         return report_api.get_daily_cash(request)
@@ -590,6 +602,9 @@ def get_daily_cash(request):
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_improved_daily_cash(request):
     try:
         return report_api.get_improved_daily_cash(request)
@@ -605,6 +620,9 @@ def get_improved_daily_cash(request):
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_daily_paid_tickets(request):
     try:
         return report_api.get_daily_paid_tickets(request)
@@ -620,6 +638,9 @@ def get_daily_paid_tickets(request):
 
 
 @csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def get_appointments_between_dates(request):
     try:
         return report_api.get_appointments_between_dates(request)
@@ -638,33 +659,65 @@ def reports_dashboard(request):
     return render(request, "reports.html")
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def pdf_citas_terapeuta(request):
     return pdf_export.pdf_citas_terapeuta(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def pdf_pacientes_terapeuta(request):
     return pdf_export.pdf_pacientes_terapeuta(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def pdf_resumen_caja(request):
     return pdf_export.pdf_resumen_caja(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def pdf_caja_chica_mejorada(request):
     return pdf_export.pdf_caja_chica_mejorada(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def pdf_tickets_pagados(request):
     return pdf_export.pdf_tickets_pagados(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def exportar_excel_citas(request):
     return excel_export.exportar_excel_citas(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def exportar_excel_caja_chica_mejorada(request):
     return excel_export.exportar_excel_caja_chica_mejorada(request)
 
 
+@csrf_exempt
+@api_view(["GET", "POST"])  # DRF Request + JWT
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
 def exportar_excel_tickets_pagados(request):
     return excel_export.exportar_excel_tickets_pagados(request)

@@ -13,53 +13,55 @@ from architect.utils.tenant import filter_by_tenant, get_tenant, is_global_admin
 class ReportService:
     def get_appointments_count_by_therapist(self, validated_data, user=None):
         """
-        Conteo de TODAS las citas por terapeuta para una fecha dada.
-        Agrupa desde Appointment para evitar problemas de related_name.
+        Conteo de citas por terapeuta para una fecha dada.
+        Requisito: listar también terapeutas sin citas (conteo = 0) en el alcance del tenant.
         """
         query_date = validated_data.get("date")
 
-        # Si appointment_date es DateField, basta con igualdad.
-        # Si es DateTimeField, usamos TruncDate para comparar el día.
-        # Esta versión funciona en ambos casos (TruncDate ⇒ date-only).
-        qs = (
+        # 1) Terapeutas en alcance (por tenant o todos si admin)
+        #    No filtramos por deleted_at para no excluir terapeutas restaurables
+        therapists_qs = Therapist.objects.all()
+        if user:
+            therapists_qs = filter_by_tenant(therapists_qs, user, field='reflexo')
+
+        therapists_qs = therapists_qs.values(
+            'id', 'reflexo_id', 'first_name', 'last_name_paternal', 'last_name_maternal'
+        )
+
+        # 2) Citas del día (filtradas por tenant)
+        appointments_qs = (
             Appointment.objects
             .filter(therapist__isnull=False)
-            .annotate(day=TruncDate("appointment_date"))
+            .annotate(day=TruncDate('appointment_date'))
             .filter(day=query_date)
         )
-        
-        # Aplicar filtrado por tenant si se proporciona usuario
         if user:
-            qs = filter_by_tenant(qs, user, field='reflexo')
-        
-        qs = qs.values(
-            "therapist_id",
-            "therapist__first_name",
-            "therapist__last_name_paternal",
-            "therapist__last_name_maternal",
-            "therapist__reflexo_id",
-        ).annotate(appointments_count=Count("id"))
+            appointments_qs = filter_by_tenant(appointments_qs, user, field='reflexo')
 
-        therapists = [
-            {
-                "id": row["therapist_id"],
-                "reflexo_id": row["therapist__reflexo_id"],
-                "name": f'{row["therapist__first_name"]} {row["therapist__last_name_paternal"] or ""} {row["therapist__last_name_maternal"] or ""}'.strip(),
-                "last_name_paternal": row["therapist__last_name_paternal"],
-                "last_name_maternal": row["therapist__last_name_maternal"],
-                "appointments_count": row["appointments_count"],
-            }
-            for row in qs
-        ]
+        counts_by_therapist = {
+            row['therapist_id']: row['appointments_count']
+            for row in appointments_qs.values('therapist_id').annotate(appointments_count=Count('id'))
+        }
 
-        # Ordenar por mayor número de citas (como antes)
-        therapists.sort(key=lambda t: (-t["appointments_count"], t["last_name_paternal"] or "", t["last_name_maternal"] or "", t["id"]))
+        # 3) Construir respuesta incluyendo terapeutas con 0
+        therapists = []
+        for t in therapists_qs:
+            count = counts_by_therapist.get(t['id'], 0)
+            therapists.append({
+                'id': t['id'],
+                'reflexo_id': t['reflexo_id'],
+                'name': f"{t['first_name']} {t['last_name_paternal'] or ''} {t['last_name_maternal'] or ''}".strip(),
+                'last_name_paternal': t['last_name_paternal'],
+                'last_name_maternal': t['last_name_maternal'],
+                'appointments_count': count,
+            })
 
-        total_appointments = sum(t["appointments_count"] for t in therapists)
+        therapists.sort(key=lambda x: (-x['appointments_count'], x['last_name_paternal'] or '', x['last_name_maternal'] or '', x['id']))
+        total_appointments = sum(t['appointments_count'] for t in therapists)
 
         return {
-            "therapists_appointments": therapists,
-            "total_appointments_count": total_appointments,
+            'therapists_appointments': therapists,
+            'total_appointments_count': total_appointments,
         }
 
     def get_patients_by_therapist(self, validated_data, user=None):
@@ -297,13 +299,15 @@ class ReportService:
         """
         query_date = validated_data.get("date")
 
-        # Obtener tickets pagados del día
+        # Obtener tickets pagados del día (incluir tickets pagados en esa fecha o actualizados ese día)
         paid_tickets = (
             Ticket.objects
             .filter(
-                payment_date__date=query_date,
                 status='paid',
                 is_active=True
+            )
+            .filter(
+                Q(payment_date__date=query_date) | Q(updated_at__date=query_date)
             )
         )
         
@@ -419,12 +423,12 @@ class ReportService:
         start_date = validated_data.get("start_date")
         end_date = validated_data.get("end_date")
 
+        # Usar filtro por fecha que funciona en otros endpoints (appointment_date__date__range)
         appointments = (
             Appointment.objects
             .select_related("patient", "therapist")
             .filter(
-                appointment_date__gte=start_date,
-                appointment_date__lte=end_date
+                appointment_date__date__range=[start_date, end_date]
             )
         )
         

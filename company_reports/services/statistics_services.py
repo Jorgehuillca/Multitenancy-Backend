@@ -1,12 +1,13 @@
 from django.db.models import Count, Sum, Avg, Q, Case, When, F, Value
 from django.db.models.functions import ExtractWeekDay, Concat
 from appointments_status.models.appointment import Appointment
+from appointments_status.models.appointment_status import AppointmentStatus
 from architect.utils.tenant import filter_by_tenant, get_tenant, is_global_admin
 
 class StatisticsService:
     def get_metricas_principales(self, start, end, user=None):
         qs = Appointment.objects.filter(
-            appointment_date__range=[start, end]
+            appointment_date__date__range=[start, end]
         )
         
         # Aplicar filtrado por tenant si se proporciona usuario
@@ -21,7 +22,7 @@ class StatisticsService:
 
     def get_tipos_de_pago(self, start, end, user=None):
         qs = Appointment.objects.filter(
-            appointment_date__range=[start, end]
+            appointment_date__date__range=[start, end]
         )
         
         # Aplicar filtrado por tenant si se proporciona usuario
@@ -34,7 +35,7 @@ class StatisticsService:
     def get_rendimiento_terapeutas(self, start, end, user=None):
         # 1. Consulta base: sesiones e ingresos por terapeuta 
         qs = Appointment.objects.filter(
-            appointment_date__range=[start, end]
+            appointment_date__date__range=[start, end]
         )
         
         # Aplicar filtrado por tenant si se proporciona usuario
@@ -110,7 +111,7 @@ class StatisticsService:
         }
         
         qs = Appointment.objects.filter(
-            appointment_date__range=[start, end]
+            appointment_date__date__range=[start, end]
         )
         
         # Aplicar filtrado por tenant si se proporciona usuario
@@ -134,7 +135,7 @@ class StatisticsService:
         }
         
         qs = Appointment.objects.filter(
-            appointment_date__range=[start, end]
+            appointment_date__date__range=[start, end]
         )
         
         # Aplicar filtrado por tenant si se proporciona usuario
@@ -159,9 +160,13 @@ class StatisticsService:
         if user:
             qs = filter_by_tenant(qs, user, field='reflexo')
         
+        # appointment_status es ForeignKey → comparar por objeto o por nombre del estado
+        status_c = AppointmentStatus.objects.filter(name__iexact="C").first()
+        status_cc = AppointmentStatus.objects.filter(name__iexact="CC").first()
+
         return qs.aggregate(
-            c=Count("id", filter=Q(appointment_status__iexact="C")),
-            cc=Count("id", filter=Q(appointment_status__iexact="CC"))
+            c=Count("id", filter=Q(appointment_status=status_c) if status_c else Q(pk__isnull=True)),
+            cc=Count("id", filter=Q(appointment_status=status_cc) if status_cc else Q(pk__isnull=True))
         )
 
     def get_statistics(self, start, end, user=None):
